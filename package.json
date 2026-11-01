@@ -1,0 +1,13 @@
+{
+  "name": "japan-in-autumn",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "An 18-day autumn trip through Japan and Shanghai — itinerary, calendar, routed map, slot planner and a DeepSeek trip assistant.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
