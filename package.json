@@ -5,9 +5,14 @@
   "type": "module",
   "description": "An open-source trip planner: answer a few questions, get a day-by-day itinerary with calendar, map, live photos, routes and a trip assistant.",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "wrangler dev --port 4173",
+    "deploy": "wrangler deploy",
+    "start:static": "node server.mjs"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "wrangler": "4.151.3"
   }
 }

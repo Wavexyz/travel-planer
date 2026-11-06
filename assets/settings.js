@@ -11,7 +11,9 @@ let onSaved = null, returnFocus = null;
 
 const get = k => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
 const set = (k, v) => { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch {} };
-const deepseekKey = () => get(K_DS);
+// With the site's backend, DeepSeek is called by the server with its own key.
+const SERVER = !!window.APP_CONFIG?.server;
+const deepseekKey = () => SERVER ? "server" : get(K_DS);
 // deepseek-chat and deepseek-reasoner were retired on 2026-07-24.
 const LEGACY_MODEL = { "deepseek-chat": "deepseek-flash", "deepseek-reasoner": "deepseek-v4-pro" };
 const model = () => { const m = get(K_MODEL); return LEGACY_MODEL[m] || m || "deepseek-flash"; };
@@ -29,6 +31,13 @@ function fill() {
   mapIdInput.value = get(TripGoogle.K_MAPID);
   modelSel.value = model();
   setStatus("");
+  if (SERVER) {
+    // Keys are stored as server secrets: nothing to enter here.
+    dsInput.closest(".field").hidden = true;
+    mapIdInput.closest(".field").hidden = true; // the map is styled in code now, so a Map ID has no effect
+    if (window.APP_CONFIG.googleMapsKey) gInput.closest(".field").hidden = true;
+    $("#settings-title").nextElementSibling.textContent = "The DeepSeek, Google Maps and travel-data keys are stored securely on the server.";
+  }
 }
 /* open({ focus: "google" | "deepseek", note, onSaved }) */
 function open(opts = {}) {

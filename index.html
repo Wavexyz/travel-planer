@@ -12,7 +12,7 @@
 <meta property="og:description" content="Plan a trip from a few questions: a day-by-day itinerary, calendar and map, with a trip assistant.">
 <meta property="og:type" content="website">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/app.css?v=20261102-1">
+<link rel="stylesheet" href="assets/app.css?v=20261106-10">
 </head>
 <body data-mode="trip">
 <a class="skip" href="#page">Skip to the trip</a>
@@ -180,8 +180,8 @@
   </div>
   <div class="ob-body">
     <div class="ob-panel" id="ob-welcome">
-      <h1 id="ob-title">Plan a new trip</h1>
-      <p class="ob-lede">Answer a few questions and the assistant builds a day-by-day itinerary. Every stop shows up in the itinerary, the calendar and the map.</p>
+      <h1 id="ob-title">Plan your trip to Japan</h1>
+      <p class="ob-lede">Tell us what you love. We help you find flights and hotels first, then build a day-by-day plan from a curated Japan guide. Every stop shows up in the itinerary, the calendar and the map.</p>
       <div class="ob-actions">
         <button type="button" class="btn primary" id="ob-start">Start planning</button>
         <button type="button" class="btn" id="ob-sample">Open the sample trip</button>
@@ -194,15 +194,8 @@
       <div class="ob-progress"><span id="ob-step-label"></span><div class="ob-bar" aria-hidden="true"><i id="ob-bar"></i></div></div>
 
       <fieldset class="ob-step" data-step="1">
-        <legend>Where do you want to go?</legend>
-        <label class="field"><span class="field-k">Destination</span>
-          <textarea name="destination" rows="2" required placeholder="Japan: Tokyo and Kyoto, maybe a night in a hot-spring town"></textarea></label>
-        <label class="field"><span class="field-k">Travelling from <i>optional</i></span>
-          <input name="from" placeholder="Your home city or airport"></label>
-      </fieldset>
-
-      <fieldset class="ob-step" data-step="2" hidden>
-        <legend>When?</legend>
+        <legend>When are you going to Japan?</legend>
+        <p class="ob-hint">Pick the first and last day of the trip, including the flights there and back.</p>
         <div class="field">
           <span class="field-k" id="ob-cal-k">Dates</span>
           <div class="ob-chips" id="ob-flex" role="radiogroup" aria-label="How fixed are your dates">
@@ -217,7 +210,7 @@
             <div class="flexi-len"><span class="field-k" id="ob-len-k">How long?</span>
               <div class="stepper" role="group" aria-labelledby="ob-len-k">
                 <button type="button" data-len="-1" aria-label="One day fewer">−</button>
-                <input type="number" name="duration" min="1" max="30" value="7" aria-label="Days">
+                <input type="number" name="duration" min="1" max="30" value="10" aria-label="Days">
                 <button type="button" data-len="1" aria-label="One day more">+</button>
                 <span>days</span>
               </div>
@@ -228,98 +221,291 @@
           <p class="rcal-sum" id="ob-cal-sum" aria-live="polite"></p>
           <input type="hidden" name="start"><input type="hidden" name="end">
         </div>
-        <label class="field"><span class="field-k">Arrival <i>optional</i></span>
-          <input name="arrival" placeholder="Land at Haneda at 19:45 on the first day"></label>
-        <label class="field"><span class="field-k">Departure <i>optional</i></span>
-          <input name="departure" placeholder="Fly home from Osaka at 14:00 on the last day"></label>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="2" hidden>
+        <legend>Who's going?</legend>
+        <div class="ob-cards" role="radiogroup" aria-label="Travelling as">
+          <label class="ob-card"><input type="radio" name="party" value="solo"><span class="ob-card-i" aria-hidden="true">🧍</span><b>Solo</b><small>Just me</small></label>
+          <label class="ob-card"><input type="radio" name="party" value="couple" checked><span class="ob-card-i" aria-hidden="true">👫</span><b>Couple</b><small>Two adults</small></label>
+          <label class="ob-card"><input type="radio" name="party" value="family_with_kids"><span class="ob-card-i" aria-hidden="true">👨‍👩‍👧</span><b>Family</b><small>With children</small></label>
+          <label class="ob-card"><input type="radio" name="party" value="friends_group"><span class="ob-card-i" aria-hidden="true">👯</span><b>Friends</b><small>A group</small></label>
+          <label class="ob-card"><input type="radio" name="party" value="seniors"><span class="ob-card-i" aria-hidden="true">🧓</span><b>Seniors</b><small>An easier pace</small></label>
+        </div>
+        <div class="ob-row ob-who">
+          <div class="field"><span class="field-k" id="ob-adults-k">Adults</span>
+            <div class="stepper" role="group" aria-labelledby="ob-adults-k">
+              <button type="button" data-count="adults" data-d="-1" aria-label="One adult fewer">−</button>
+              <input type="number" name="adults" min="1" max="9" value="2" aria-labelledby="ob-adults-k">
+              <button type="button" data-count="adults" data-d="1" aria-label="One adult more">+</button>
+            </div></div>
+          <label class="field" id="ob-kids" hidden><span class="field-k">Children's ages</span><input name="kids" placeholder="e.g. 6, 9"></label>
+        </div>
+        <div class="ob-group">
+          <span class="field-k" id="ob-mob-k">Getting around on foot</span>
+          <div class="ob-chips" role="radiogroup" aria-labelledby="ob-mob-k">
+            <label class="ob-chip"><input type="radio" name="mobility" value="none" checked><span>No limits</span></label>
+            <label class="ob-chip"><input type="radio" name="mobility" value="low_steps_no_stairs"><span>Few steps and stairs</span></label>
+            <label class="ob-chip"><input type="radio" name="mobility" value="stroller_friendly"><span>With a stroller</span></label>
+            <label class="ob-chip"><input type="radio" name="mobility" value="wheelchair_accessible"><span>Wheelchair</span></label>
+          </div>
+        </div>
       </fieldset>
 
       <fieldset class="ob-step" data-step="3" hidden>
-        <legend>Who's going?</legend>
-        <div class="ob-chips" role="radiogroup" aria-label="Travelling as">
-          <label class="ob-chip"><input type="radio" name="party" value="Solo"><span>Solo</span></label>
-          <label class="ob-chip"><input type="radio" name="party" value="Couple" checked><span>Couple</span></label>
-          <label class="ob-chip"><input type="radio" name="party" value="Family with children"><span>Family</span></label>
-          <label class="ob-chip"><input type="radio" name="party" value="Friends"><span>Friends</span></label>
-          <label class="ob-chip"><input type="radio" name="party" value="Group"><span>Group</span></label>
+        <legend>What do you want from Japan?</legend>
+        <p class="ob-hint">Tap once if you'd <b>like</b> it, twice if you <b>love</b> it. Loved ones shape most of your days.</p>
+        <div class="ob-cards ob-cards-wide" aria-label="Interests">
+          <label class="ob-card"><input type="checkbox" name="interests" value="ancient_history_temples_castles"><span class="ob-card-i" aria-hidden="true">⛩️</span><b>Temples &amp; shrines</b><small>Fushimi Inari at dawn · a Koyasan temple stay</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="samurai_edo_modern_history"><span class="ob-card-i" aria-hidden="true">🏯</span><b>Castles &amp; Edo towns</b><small>Himeji Castle · Nijo Castle&#39;s nightingale floors</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="onsen_ryokan_baths"><span class="ob-card-i" aria-hidden="true">♨️</span><b>Onsen &amp; ryokan</b><small>Kinosaki&#39;s seven bathhouses · Ginzan&#39;s gaslit street</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="nature_gardens_scenic_trains"><span class="ob-card-i" aria-hidden="true">🗻</span><b>Nature &amp; scenic trains</b><small>The Nakasendo trail · the Kumano Kodo pilgrimage</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="seasonal_festivals_illuminations"><span class="ob-card-i" aria-hidden="true">🎆</span><b>Seasons &amp; festivals</b><small>Kyoto night illuminations · cherry blossom or autumn leaves</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="contemporary_art_architecture"><span class="ob-card-i" aria-hidden="true">🏛️</span><b>Art &amp; architecture</b><small>Naoshima art island · teamLab · Teshima Art Museum</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="anime_manga_gaming_akiba"><span class="ob-card-i" aria-hidden="true">🎮</span><b>Pop culture</b><small>Ghibli Museum · Super Nintendo World · Akihabara</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="nightlife_cocktails_bars"><span class="ob-card-i" aria-hidden="true">🍸</span><b>Nightlife</b><small>Ginza cocktail bars · Golden Gai · jazz kissa</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="watches_horology_books_stationery"><span class="ob-card-i" aria-hidden="true">🖋️</span><b>Crafts &amp; shopping</b><small>Jimbocho book town · Itoya stationery · vintage watches</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="performing_arts_immersions"><span class="ob-card-i" aria-hidden="true">🎭</span><b>Arts &amp; hands-on</b><small>A sumo tournament · kabuki in Ginza · zazen with a monk</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
+          <label class="ob-card"><input type="checkbox" name="interests" value="jdm_cars_motorsport"><span class="ob-card-i" aria-hidden="true">🏎️</span><b>Car culture</b><small>Daikoku night car meet · a JDM drive in Hakone</small><span class="ob-love" aria-hidden="true">♥ Love</span></label>
         </div>
-        <div class="ob-row">
-          <label class="field"><span class="field-k">How many people</span><input type="number" name="people" min="1" max="20" value="2"></label>
-          <label class="field"><span class="field-k">Children's ages <i>optional</i></span><input name="kids" placeholder="6 and 9"></label>
+        <div class="ob-group">
+          <span class="field-k" id="ob-cities-k">Places you want to see <i>optional — or let us choose</i></span>
+          <div class="ob-chips" aria-labelledby="ob-cities-k">
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Tokyo"><span>Tokyo</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Kyoto"><span>Kyoto</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Osaka"><span>Osaka</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Nara"><span>Nara</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Hakone"><span>Hakone</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Mt Fuji (Kawaguchiko)"><span>Mt Fuji</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Hiroshima and Miyajima"><span>Hiroshima &amp; Miyajima</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Kanazawa"><span>Kanazawa</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Takayama"><span>Takayama</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Nikko"><span>Nikko</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Naoshima"><span>Naoshima</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Hokkaido"><span>Hokkaido</span></label>
+            <label class="ob-chip"><input type="checkbox" name="cities" value="Okinawa"><span>Okinawa</span></label>
+          </div>
+        </div>
+        <label class="field"><span class="field-k">Anything more specific? <i>optional</i></span>
+          <input name="interestsOther" placeholder="Studio Ghibli Museum, a sumo match, a tea ceremony…"></label>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="3b" hidden>
+        <legend>Your travel style</legend>
+        <div class="ob-group">
+          <span class="field-k" id="ob-visit-k">Have you been to Japan before?</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-visit-k">
+            <label class="ob-card"><input type="radio" name="visits" value="first" checked><span class="ob-card-i" aria-hidden="true">🌱</span><b>First time</b><small>Show me the essentials</small></label>
+            <label class="ob-card"><input type="radio" name="visits" value="returning"><span class="ob-card-i" aria-hidden="true">🔁</span><b>Been before</b><small>Skip what I've seen</small></label>
+            <label class="ob-card"><input type="radio" name="visits" value="expert"><span class="ob-card-i" aria-hidden="true">🧭</span><b>Know it well</b><small>Surprise me</small></label>
+          </div>
+        </div>
+        <div class="ob-group">
+          <span class="field-k" id="ob-disc-k">Famous places or hidden gems?</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-disc-k">
+            <label class="ob-card"><input type="radio" name="discovery" value="icons"><span class="ob-card-i" aria-hidden="true">🏯</span><b>The highlights</b><small>The places everyone talks about</small></label>
+            <label class="ob-card"><input type="radio" name="discovery" value="mix" checked><span class="ob-card-i" aria-hidden="true">⚖️</span><b>A mix</b><small>Highlights plus a few secrets</small></label>
+            <label class="ob-card"><input type="radio" name="discovery" value="gems"><span class="ob-card-i" aria-hidden="true">💎</span><b>Hidden gems</b><small>Where locals go</small></label>
+          </div>
+        </div>
+        <div class="field">
+          <span class="field-k" id="ob-vibe-k">Traditional or modern Japan?</span>
+          <input type="range" name="vibe" min="0" max="4" step="1" value="2" list="ob-vibe-marks" aria-labelledby="ob-vibe-k" class="ob-range">
+          <div class="ob-range-labels" aria-hidden="true"><span>All traditional</span><span>Balanced</span><span>All modern</span></div>
         </div>
       </fieldset>
 
       <fieldset class="ob-step" data-step="4" hidden>
-        <legend>What do you love?</legend>
-        <div class="ob-chips" aria-label="Interests">
-          <label class="ob-chip"><input type="checkbox" name="interests" value="History and culture"><span>History &amp; culture</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Food and drink"><span>Food &amp; drink</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Nature and hiking"><span>Nature &amp; hiking</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Art and museums"><span>Art &amp; museums</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Architecture"><span>Architecture</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Shopping"><span>Shopping</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Nightlife"><span>Nightlife</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Beaches"><span>Beaches</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Wellness and spas"><span>Wellness &amp; spas</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Photography"><span>Photography</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Off the beaten path"><span>Off the beaten path</span></label>
-          <label class="ob-chip"><input type="checkbox" name="interests" value="Kids' activities"><span>Kids' activities</span></label>
-        </div>
-        <label class="field"><span class="field-k">Anything more specific? <i>optional</i></span>
-          <input name="interestsOther" placeholder="Castles, Studio Ghibli, car culture, jazz bars…"></label>
-      </fieldset>
-
-      <fieldset class="ob-step" data-step="5" hidden>
-        <legend>Pace and style</legend>
+        <legend>Pace and crowds</legend>
         <div class="ob-group">
           <span class="field-k" id="ob-pace-k">Pace</span>
           <div class="ob-cards" role="radiogroup" aria-labelledby="ob-pace-k">
-            <label class="ob-card"><input type="radio" name="pace" value="Relaxed (2–3 things a day, late starts)"><span class="ob-card-i" aria-hidden="true">🐢</span><b>Relaxed</b><small>2–3 things a day, late starts</small></label>
-            <label class="ob-card"><input type="radio" name="pace" value="Balanced (3–5 things a day)" checked><span class="ob-card-i" aria-hidden="true">🚶</span><b>Balanced</b><small>3–5 things a day</small></label>
-            <label class="ob-card"><input type="radio" name="pace" value="Packed (see as much as possible)"><span class="ob-card-i" aria-hidden="true">⚡</span><b>Packed</b><small>See as much as possible</small></label>
+            <label class="ob-card"><input type="radio" name="pace" value="relaxed"><span class="ob-card-i" aria-hidden="true">🐢</span><b>Relaxed</b><small>One anchor a morning, a calm afternoon · 8–12k steps</small></label>
+            <label class="ob-card"><input type="radio" name="pace" value="balanced" checked><span class="ob-card-i" aria-hidden="true">🚶</span><b>Balanced</b><small>Two anchors and an evening area · 12–15k steps</small></label>
+            <label class="ob-card"><input type="radio" name="pace" value="fast_paced"><span class="ob-card-i" aria-hidden="true">⚡</span><b>Full on</b><small>Early starts and nightlife · 16–22k steps</small></label>
           </div>
         </div>
         <div class="ob-group">
-          <span class="field-k" id="ob-walking-k">Walking</span>
-          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-walking-k">
-            <label class="ob-card"><input type="radio" name="walking" value="Light, under 10,000 steps a day"><span class="ob-card-i" aria-hidden="true">👟</span><b>Light</b><small>Under 10k steps a day</small></label>
-            <label class="ob-card"><input type="radio" name="walking" value="Moderate, up to 20,000 steps a day" checked><span class="ob-card-i" aria-hidden="true">🥾</span><b>Moderate</b><small>Up to 20k steps a day</small></label>
-            <label class="ob-card"><input type="radio" name="walking" value="Lots of walking is fine"><span class="ob-card-i" aria-hidden="true">🏃</span><b>Lots</b><small>Happy to walk all day</small></label>
+          <span class="field-k" id="ob-crowd-k">Crowds</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-crowd-k">
+            <label class="ob-card"><input type="radio" name="crowds" value="high_avoid_crowds"><span class="ob-card-i" aria-hidden="true">🌿</span><b>Avoid them</b><small>Early slots and quieter twins of famous places</small></label>
+            <label class="ob-card"><input type="radio" name="crowds" value="moderate" checked><span class="ob-card-i" aria-hidden="true">⚖️</span><b>A mix</b><small>Icons at smart times, plus quiet corners</small></label>
+            <label class="ob-card"><input type="radio" name="crowds" value="must_see_all_icons"><span class="ob-card-i" aria-hidden="true">📸</span><b>See the icons</b><small>The famous places, whatever it takes</small></label>
           </div>
         </div>
         <div class="ob-group">
-          <span class="field-k" id="ob-transport-k">Getting around</span>
-          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-transport-k">
-            <label class="ob-card"><input type="radio" name="transport" value="Public transport and walking" checked><span class="ob-card-i" aria-hidden="true">🚆</span><b>Public transport</b><small>Trains, metro and buses</small></label>
-            <label class="ob-card"><input type="radio" name="transport" value="Rental car"><span class="ob-card-i" aria-hidden="true">🚗</span><b>Rental car</b><small>Drive yourselves</small></label>
-            <label class="ob-card"><input type="radio" name="transport" value="Taxis and private transfers"><span class="ob-card-i" aria-hidden="true">🚕</span><b>Taxis &amp; transfers</b><small>Door to door</small></label>
-            <label class="ob-card"><input type="radio" name="transport" value="A mix of whatever is best"><span class="ob-card-i" aria-hidden="true">🔀</span><b>A mix</b><small>Whatever fits each day</small></label>
+          <span class="field-k" id="ob-hops-k">Changing hotels</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-hops-k">
+            <label class="ob-card"><input type="radio" name="hops" value="minimal_hops"><span class="ob-card-i" aria-hidden="true">🏠</span><b>As little as possible</b><small>Two bases, day trips from there</small></label>
+            <label class="ob-card"><input type="radio" name="hops" value="moderate" checked><span class="ob-card-i" aria-hidden="true">🧳</span><b>A few moves</b><small>Three or four bases</small></label>
+            <label class="ob-card"><input type="radio" name="hops" value="road_trip"><span class="ob-card-i" aria-hidden="true">🚄</span><b>Keep moving</b><small>A new place every couple of nights</small></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="5" hidden>
+        <legend>Food</legend>
+        <div class="ob-group">
+          <span class="field-k" id="ob-food-k">What do you want to eat?</span>
+          <div class="ob-chips" aria-labelledby="ob-food-k">
+            <label class="ob-chip"><input type="checkbox" name="food" value="fine_dining_omakase_kaiseki"><span>🍣 Sushi counters, omakase &amp; kaiseki</span></label>
+            <label class="ob-chip"><input type="checkbox" name="food" value="ramen_soba_udon_hunting"><span>🍜 Ramen, soba &amp; udon</span></label>
+            <label class="ob-chip"><input type="checkbox" name="food" value="street_food_izakaya_markets"><span>🏮 Street food, markets &amp; izakaya</span></label>
+            <label class="ob-chip"><input type="checkbox" name="food" value="specialty_coffee_kissaten"><span>☕ Coffee, kissaten &amp; tea</span></label>
           </div>
         </div>
         <div class="ob-group">
-          <span class="field-k" id="ob-stay-k">Where you like to stay</span>
-          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-stay-k">
-            <label class="ob-card"><input type="radio" name="stay" value="Budget hotels or hostels"><span class="ob-card-i" aria-hidden="true">🎒</span><b>Budget</b><small>Hostels and simple hotels</small></label>
-            <label class="ob-card"><input type="radio" name="stay" value="Comfortable mid-range hotels" checked><span class="ob-card-i" aria-hidden="true">🛏️</span><b>Mid-range</b><small>Comfortable hotels</small></label>
-            <label class="ob-card"><input type="radio" name="stay" value="Boutique and characterful places"><span class="ob-card-i" aria-hidden="true">🪴</span><b>Boutique</b><small>Small places with character</small></label>
-            <label class="ob-card"><input type="radio" name="stay" value="Luxury hotels"><span class="ob-card-i" aria-hidden="true">✨</span><b>Luxury</b><small>The best in town</small></label>
-            <label class="ob-card"><input type="radio" name="stay" value="Local style (guesthouses, ryokan, riads…)"><span class="ob-card-i" aria-hidden="true">🏮</span><b>Local style</b><small>Guesthouses, ryokan, riads</small></label>
+          <span class="field-k" id="ob-diet-k">Dietary needs</span>
+          <div class="ob-chips" aria-labelledby="ob-diet-k">
+            <label class="ob-chip"><input type="checkbox" name="diet" value="pescatarian"><span>Pescatarian</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="vegetarian"><span>Vegetarian</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="vegan"><span>Vegan</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="halal"><span>Halal</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="gluten_free_celiac"><span>Gluten-free / celiac</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="no_raw_fish"><span>No raw fish</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="no_pork"><span>No pork</span></label>
+            <label class="ob-chip"><input type="checkbox" name="diet" value="shellfish_allergy"><span>Shellfish allergy</span></label>
+          </div>
+        </div>
+        <label class="field"><span class="field-k">Other allergies or dislikes <i>optional</i></span><input name="allergies" placeholder="Peanuts, sesame, no natto…"></label>
+        <div class="ob-group">
+          <span class="field-k" id="ob-adv-k">How adventurous?</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-adv-k">
+            <label class="ob-card"><input type="radio" name="adventure" value="Keep it familiar"><span class="ob-card-i" aria-hidden="true">🍱</span><b>Familiar</b><small>English menus, easy dishes</small></label>
+            <label class="ob-card"><input type="radio" name="adventure" value="Some adventure" checked><span class="ob-card-i" aria-hidden="true">🥢</span><b>Some adventure</b><small>Local places, a few surprises</small></label>
+            <label class="ob-card"><input type="radio" name="adventure" value="Anything goes"><span class="ob-card-i" aria-hidden="true">🐙</span><b>Anything goes</b><small>Ticket machines to tiny counters</small></label>
           </div>
         </div>
       </fieldset>
 
       <fieldset class="ob-step" data-step="6" hidden>
-        <legend>Budget, food and the rest</legend>
-        <div class="ob-row ob-budget">
-          <label class="field"><span class="field-k">Budget <i>optional</i></span><input type="number" name="budget" min="0" step="100" placeholder="5000"></label>
-          <label class="field"><span class="field-k">Currency</span><input name="currency" value="USD" maxlength="3"></label>
-          <label class="field"><span class="field-k">For</span>
-            <select name="budgetScope"><option value="in total">the whole trip</option><option value="per person">each person</option></select></label>
+        <legend>Hot springs</legend>
+        <div class="ob-group">
+          <span class="field-k" id="ob-onsen-k">Do you want an onsen?</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-onsen-k">
+            <label class="ob-card"><input type="radio" name="onsen" value="yes" checked><span class="ob-card-i" aria-hidden="true">♨️</span><b>Yes</b><small>It's part of the trip</small></label>
+            <label class="ob-card"><input type="radio" name="onsen" value="maybe"><span class="ob-card-i" aria-hidden="true">🤔</span><b>Maybe</b><small>If it fits</small></label>
+            <label class="ob-card"><input type="radio" name="onsen" value="no"><span class="ob-card-i" aria-hidden="true">🚿</span><b>No</b><small>Skip it</small></label>
+          </div>
         </div>
-        <label class="field"><span class="field-k">Dietary needs <i>optional</i></span><input name="diet" placeholder="Pescatarian, no pork, nut allergy…"></label>
-        <label class="field"><span class="field-k">Must do <i>optional</i></span><textarea name="must" rows="2" placeholder="See Mt Fuji, one night in a ryokan, a sushi counter…"></textarea></label>
-        <label class="field"><span class="field-k">Avoid <i>optional</i></span><input name="avoid" placeholder="Crowds, long day trips, early mornings…"></label>
-        <label class="field"><span class="field-k">Anything else? <i>optional</i></span><textarea name="notes" rows="2" placeholder="Two shopping days at the end, we travel with a wheelchair…"></textarea></label>
+        <div class="ob-group" id="ob-onsen-more">
+          <span class="field-k" id="ob-priv-k">Bathing with others</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-priv-k">
+            <label class="ob-card"><input type="radio" name="onsenPrivacy" value="in_room_private_rotenburo"><span class="ob-card-i" aria-hidden="true">🛁</span><b>Private, in our room</b><small>An open-air bath of our own</small></label>
+            <label class="ob-card"><input type="radio" name="onsenPrivacy" value="private_reservable_kashikiri"><span class="ob-card-i" aria-hidden="true">🔑</span><b>Private, bookable</b><small>A lockable bath for just us</small></label>
+            <label class="ob-card"><input type="radio" name="onsenPrivacy" value="public_communal_ok" checked><span class="ob-card-i" aria-hidden="true">🧖</span><b>Public is fine</b><small>Shared, separated by gender</small></label>
+          </div>
+          <span class="field-k" id="ob-tat-k">Tattoos <i>many baths in Japan refuse visible tattoos</i></span>
+          <div class="ob-chips" role="radiogroup" aria-labelledby="ob-tat-k">
+            <label class="ob-chip"><input type="radio" name="tattoos" value="no_tattoos" checked><span>None</span></label>
+            <label class="ob-chip"><input type="radio" name="tattoos" value="small_coverable_with_patch"><span>Small, can be covered</span></label>
+            <label class="ob-chip"><input type="radio" name="tattoos" value="visible_tattoos"><span>Visible tattoos</span></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="7" hidden>
+        <legend>Budget</legend>
+        <p class="ob-hint">On the ground in Japan, without international flights and shopping.</p>
+        <div class="ob-cards ob-cards-4" role="radiogroup" aria-label="Budget">
+          <label class="ob-card"><input type="radio" name="budgetTier" value="budget"><span class="ob-card-i" aria-hidden="true">🎒</span><b>Budget</b><small>Under $120 a night</small></label>
+          <label class="ob-card"><input type="radio" name="budgetTier" value="mid_range" checked><span class="ob-card-i" aria-hidden="true">🛏️</span><b>Mid-range</b><small>$140–250 a night</small></label>
+          <label class="ob-card"><input type="radio" name="budgetTier" value="upscale"><span class="ob-card-i" aria-hidden="true">🪴</span><b>Upscale</b><small>$250–500 a night</small></label>
+          <label class="ob-card"><input type="radio" name="budgetTier" value="luxury"><span class="ob-card-i" aria-hidden="true">✨</span><b>Luxury</b><small>$500+ a night</small></label>
+        </div>
+        <div class="ob-row ob-budget">
+          <label class="field"><span class="field-k">Currency</span>
+            <select name="currency"><option>USD</option><option>EUR</option><option>GBP</option><option>AUD</option><option>CAD</option><option>JPY</option><option>CHF</option><option>SGD</option></select></label>
+          <label class="field"><span class="field-k">Total budget in Japan <i>optional</i></span><input type="number" name="totalBudget" min="0" step="100" placeholder="7500"></label>
+        </div>
+        <p class="field-hint">You'll set an exact hotel price limit when we pick hotels.</p>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="8" hidden>
+        <legend>Anything else we should know?</legend>
+        <p class="ob-hint">Both optional. Tap an example to add it, or write your own.</p>
+        <div class="field">
+          <span class="field-k" id="ob-must-k">Is there something you definitely want to do?</span>
+          <div class="ob-chips ob-add" data-target="must" aria-labelledby="ob-must-k">
+            <button type="button" class="ob-chip-add">See Mt Fuji</button>
+            <button type="button" class="ob-chip-add">A sushi counter dinner</button>
+            <button type="button" class="ob-chip-add">A night in a ryokan</button>
+            <button type="button" class="ob-chip-add">teamLab</button>
+            <button type="button" class="ob-chip-add">Ghibli Museum</button>
+            <button type="button" class="ob-chip-add">A sumo or baseball game</button>
+            <button type="button" class="ob-chip-add">A tea ceremony</button>
+          </div>
+          <textarea name="must" rows="2" aria-labelledby="ob-must-k" placeholder="e.g. Our anniversary is on the 14th, we'd love a special dinner"></textarea>
+        </div>
+        <div class="field">
+          <span class="field-k" id="ob-avoid-k">Is there something you'd rather skip?</span>
+          <div class="ob-chips ob-add" data-target="avoid" aria-labelledby="ob-avoid-k">
+            <button type="button" class="ob-chip-add">Long day trips</button>
+            <button type="button" class="ob-chip-add">Early mornings</button>
+            <button type="button" class="ob-chip-add">Big crowds</button>
+            <button type="button" class="ob-chip-add">Late nights</button>
+            <button type="button" class="ob-chip-add">Museums</button>
+            <button type="button" class="ob-chip-add">Shopping</button>
+          </div>
+          <textarea name="avoid" rows="2" aria-labelledby="ob-avoid-k" placeholder="e.g. We've seen Kyoto before, skip the big temples"></textarea>
+        </div>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="9" hidden>
+        <legend>Have you booked your flights?</legend>
+        <p class="ob-hint">We plan the first and last day around when you land and leave.</p>
+        <div class="ob-cards" role="radiogroup" aria-label="Flights">
+          <label class="ob-card"><input type="radio" name="flightsStatus" value="booked"><span class="ob-card-i" aria-hidden="true">🎫</span><b>Yes, booked</b><small>I'll add the flight numbers</small></label>
+          <label class="ob-card"><input type="radio" name="flightsStatus" value="help" checked><span class="ob-card-i" aria-hidden="true">🔎</span><b>Not yet — help me</b><small>Show me 3 good options</small></label>
+          <label class="ob-card"><input type="radio" name="flightsStatus" value="self"><span class="ob-card-i" aria-hidden="true">🙋</span><b>I'll book them myself</b><small>I'll tell you when I land</small></label>
+        </div>
+        <div class="ob-sub" id="ob-fl-booked" hidden>
+          <p class="ob-sub-k">Flight into Japan</p>
+          <div class="ob-row">
+            <label class="field"><span class="field-k">Flight number</span><input name="inFlight" placeholder="NH 212" autocomplete="off"></label>
+            <label class="field"><span class="field-k">Departure date</span><input type="date" name="inDate"></label>
+            <div class="field"><span class="field-k">Flying from</span><div class="ap" data-ap="inFrom" data-single="1"></div></div>
+          </div>
+          <p class="ob-sub-k">Flight home</p>
+          <div class="ob-row">
+            <label class="field"><span class="field-k">Flight number</span><input name="outFlight" placeholder="NH 211" autocomplete="off"></label>
+            <label class="field"><span class="field-k">Departure date</span><input type="date" name="outDate"></label>
+            <div class="field"><span class="field-k">Flying to</span><div class="ap" data-ap="outTo" data-single="1"></div></div>
+          </div>
+          <p class="field-hint">We look up the times on Google Flights. A booking reference alone can't be looked up, so use the flight number from your confirmation.</p>
+        </div>
+        <div class="ob-sub" id="ob-fl-help">
+          <div class="ob-row">
+            <div class="field"><span class="field-k">Flying from</span><div class="ap" data-ap="homeAirport"></div><span class="field-hint">Type your city or airport.</span></div>
+            <label class="field"><span class="field-k">Cabin</span>
+              <select name="cabin"><option value="1">Economy</option><option value="2">Premium economy</option><option value="3">Business</option><option value="4">First</option></select></label>
+          </div>
+        </div>
+        <div class="ob-sub" id="ob-fl-self" hidden>
+          <p class="field-hint">Roughly is fine — you can change it later.</p>
+          <div class="ob-row">
+            <label class="field"><span class="field-k">You land at</span><select name="selfInAp"><option value="HND">Tokyo Haneda (HND)</option><option value="NRT">Tokyo Narita (NRT)</option><option value="KIX">Osaka Kansai (KIX)</option><option value="ITM">Osaka Itami (ITM)</option><option value="NGO">Nagoya (NGO)</option><option value="FUK">Fukuoka (FUK)</option><option value="CTS">Sapporo (CTS)</option><option value="OKA">Okinawa (OKA)</option></select></label>
+            <label class="field"><span class="field-k">Landing time</span><input type="time" name="selfInTime" value="15:00"></label>
+          </div>
+          <div class="ob-row">
+            <label class="field"><span class="field-k">You leave from</span><select name="selfOutAp"><option value="HND">Tokyo Haneda (HND)</option><option value="NRT">Tokyo Narita (NRT)</option><option value="KIX">Osaka Kansai (KIX)</option><option value="ITM">Osaka Itami (ITM)</option><option value="NGO">Nagoya (NGO)</option><option value="FUK">Fukuoka (FUK)</option><option value="CTS">Sapporo (CTS)</option><option value="OKA">Okinawa (OKA)</option></select></label>
+            <label class="field"><span class="field-k">Take-off time</span><input type="time" name="selfOutTime" value="12:00"></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="10" hidden>
+        <legend>Have you booked your hotels?</legend>
+        <p class="ob-hint">We'll suggest 3 for every city you still need. You always book yourself.</p>
+        <div class="ob-cards" role="radiogroup" aria-label="Hotels">
+          <label class="ob-card"><input type="radio" name="hotelsStatus" value="booked"><span class="ob-card-i" aria-hidden="true">🏨</span><b>Yes, all of them</b><small>I'll list them</small></label>
+          <label class="ob-card"><input type="radio" name="hotelsStatus" value="some"><span class="ob-card-i" aria-hidden="true">🧩</span><b>Some of them</b><small>Help with the rest</small></label>
+          <label class="ob-card"><input type="radio" name="hotelsStatus" value="help" checked><span class="ob-card-i" aria-hidden="true">🔎</span><b>Not yet — help me</b><small>3 options per city</small></label>
+        </div>
+        <div class="ob-sub" id="ob-ht-booked" hidden>
+          <div id="ob-hotel-rows"></div>
+          <button type="button" class="btn" id="ob-add-hotel">Add another hotel</button>
+        </div>
       </fieldset>
 
       <p class="ob-error" id="ob-error" role="alert" hidden></p>
@@ -327,9 +513,11 @@
         <button type="button" class="btn" id="ob-back">Back</button>
         <span class="grow"></span>
         <button type="button" class="btn primary" id="ob-next">Next</button>
-        <button type="submit" class="btn primary" id="ob-generate" hidden>Generate itinerary</button>
+        <button type="submit" class="btn primary" id="ob-generate" hidden>Continue</button>
       </div>
     </form>
+
+    <div class="ob-panel" id="ob-book" hidden aria-live="polite"></div>
 
     <div class="ob-panel" id="ob-working" hidden>
       <div class="gen-head">
@@ -490,13 +678,15 @@
   </form>
 </dialog>
 
-<script src="assets/google.js?v=20261102-1"></script>
-<script src="assets/settings.js?v=20261102-1"></script>
-<script src="assets/trips.js?v=20261102-1"></script>
-<script src="assets/routing.js?v=20261102-1"></script>
-<script src="assets/app.js?v=20261102-1"></script>
-<script src="assets/assistant.js?v=20261102-1"></script>
-<script src="assets/generator.js?v=20261102-1"></script>
-<script src="assets/onboarding.js?v=20261102-1"></script>
+<script src="assets/api.js?v=20261106-10"></script>
+<script src="assets/google.js?v=20261106-10"></script>
+<script src="assets/settings.js?v=20261106-10"></script>
+<script src="assets/trips.js?v=20261106-10"></script>
+<script src="assets/routing.js?v=20261106-10"></script>
+<script src="assets/app.js?v=20261106-10"></script>
+<script src="assets/assistant.js?v=20261106-10"></script>
+<script src="assets/generator.js?v=20261106-10"></script>
+<script src="assets/booking.js?v=20261106-10"></script>
+<script src="assets/onboarding.js?v=20261106-10"></script>
 </body>
 </html>

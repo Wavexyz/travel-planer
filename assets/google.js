@@ -10,8 +10,9 @@ const PLACES = "https://places.googleapis.com/v1";
 const BASIC = "id,displayName,formattedAddress,location,rating,userRatingCount,photos,primaryTypeDisplayName,googleMapsUri";
 const FULL = BASIC + ",editorialSummary,reviews";
 
-const key = () => localStorage.getItem(K_KEY) || "";
-const mapId = () => localStorage.getItem(K_MAPID) || "DEMO_MAP_ID";
+// The server injects the site's key (APP_CONFIG); a key saved in this browser is the fallback.
+const key = () => window.APP_CONFIG?.googleMapsKey || localStorage.getItem(K_KEY) || "";
+const mapId = () => localStorage.getItem(K_MAPID) || window.APP_CONFIG?.mapId || "DEMO_MAP_ID";
 
 /* ---------- Session cache ---------- */
 const cache = new Map();

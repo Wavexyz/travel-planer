@@ -1,0 +1,14 @@
+# Never publish these as static files.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+.git
+.gitignore
+.wrangler
+node_modules
+worker
+wrangler.jsonc
+package.json
+package-lock.json
+server.mjs

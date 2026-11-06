@@ -7,7 +7,7 @@
    The planning instructions come from skills/itinerary.md; the JSON contract
    below is what the page needs and stays in code. */
 (() => {
-const API = "https://api.deepseek.com/chat/completions";
+const API = "/api/llm";
 const SKILL_URL = "skills/itinerary.md";
 const DAYS_PER_CALL = 3;
 const KINDS = ["sight", "nature", "food", "hotel", "shop", "transport", "city"];
@@ -44,28 +44,22 @@ async function skill() {
 }
 
 /* ---------- DeepSeek ---------- */
-async function callJSON(system, user, { signal, maxTokens = 8000 } = {}) {
-  const key = window.TripSettings?.deepseekKey();
-  if (!key) { const e = new Error("Add a DeepSeek key in Settings."); e.status = 401; throw e; }
+/* Through the site's backend (/api/llm), which adds the key and puts the Japan skill
+   (trimmed to this traveller's interests) in front of the planning instructions. */
+async function callJSON(system, user, { signal, maxTokens = 8000, scope } = {}) {
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
+      let res;
+      try {
         // Flash without thinking: fast, cheap and supports JSON output.
-        body: JSON.stringify({
-          model: "deepseek-flash", thinking: { type: "disabled" }, temperature: 0.6, max_tokens: maxTokens,
-          response_format: { type: "json_object" },
+        res = await TripAPI.post(API, {
+          model: "deepseek-flash", temperature: 0.6, max_tokens: maxTokens,
+          response_format: { type: "json_object" }, skill: scope || {},
           messages: [{ role: "system", content: system }, { role: "user", content: user }],
-        }),
-        signal,
-      });
-      if (!res.ok) {
-        let detail = "";
-        try { const j = await res.json(); detail = j?.error?.message || ""; } catch {}
-        const e = new Error(detail || "DeepSeek returned HTTP " + res.status); e.status = res.status;
-        if (res.status < 500 && res.status !== 429) throw Object.assign(e, { fatal: true });
+        }, { signal });
+      } catch (e) {
+        if (e.status && e.status < 500 && e.status !== 429) e.fatal = true;
         throw e;
       }
       const j = await res.json();
@@ -89,26 +83,32 @@ function datesLine(a) {
   const f = +a.flex;
   return `Dates: ${a.start} to ${a.end}${f ? ` (can move up to ${f} day${f > 1 ? "s" : ""} either way)` : ""}`;
 }
+const legText = l => l ? `${l.number || "flight"} ${l.from?.id || ""} ${l.from?.time || ""} → ${l.to?.id || ""} ${l.to?.time || ""}`.replace(/\s+/g, " ").trim() : "";
+/* The traveller as the skill's TripBrief (section 2), one line per field. */
 function profileText(a) {
-  const who = [a.party, a.people ? `${a.people} ${+a.people === 1 ? "person" : "people"}` : "", a.kids ? `children: ${a.kids}` : ""].filter(Boolean).join(", ");
+  const list = v => (Array.isArray(v) ? v : [v]).filter(Boolean).join(", ");
   const lines = [
-    `Destination: ${a.destination}`,
-    a.from && `Travelling from: ${a.from}`,
+    `Destination: Japan`,
     datesLine(a),
-    a.arrival && `Arrival: ${a.arrival}`,
-    a.departure && `Departure: ${a.departure}`,
-    who && `Travellers: ${who}`,
-    (a.interests?.length || a.interestsOther) && `Interests: ${[...(a.interests || []), a.interestsOther].filter(Boolean).join(", ")}`,
-    a.pace && `Pace: ${a.pace}`,
-    a.walking && `Walking: ${a.walking}`,
-    a.stay && `Accommodation: ${a.stay}`,
-    a.transport && `Getting around: ${a.transport}`,
-    a.budget && `Budget: ${a.budget} ${a.currency || ""} ${a.budgetScope || ""}`.trim(),
-    a.diet && `Dietary needs: ${a.diet}`,
-    a.food && `Food wishes: ${a.food}`,
+    a.flights?.in && `Arrival flight: ${legText(a.flights.in)}${a.flights.in.booked ? " (booked)" : " (chosen, not booked yet)"}`,
+    a.flights?.out && `Departure flight: ${legText(a.flights.out)}${a.flights.out.booked ? " (booked)" : " (chosen, not booked yet)"}`,
+    `party_type: ${a.party || "couple"}; adults_count: ${a.adults || 2}${a.kids ? `; children_ages: [${a.kids}]` : ""}`,
+    a.mobility && a.mobility !== "none" && `mobility_constraints: ${a.mobility}`,
+    a.bed && `bed_preference: ${a.bed}`,
+    `budget_tier: ${a.budgetTier || "mid_range"}${+a.maxNightly ? `; max_hotel_nightly: ${a.maxNightly} ${a.currency}` : ""}${+a.totalBudget ? `; total_land_budget: ${a.totalBudget} ${a.currency}` : ""}`,
+    `pacing_style: ${a.pace || "balanced"}; crowd_sensitivity: ${a.crowds || "moderate"}; base_change_tolerance: ${a.hops || "moderate"}`,
+    `dietary_restrictions: [${list(a.diet) || "omnivore"}]${a.allergies ? `; other allergies/dislikes: ${a.allergies}` : ""}${a.adventure ? `; food adventurousness: ${a.adventure}` : ""}`,
+    a.food?.length && `food interests: ${list(a.food)}`,
+    a.onsen && `wants_onsen_experience: ${a.onsen}${a.onsen !== "no" ? `; onsen_privacy_preference: ${a.onsenPrivacy}; tattoo_status: ${a.tattoos}` : ""}`,
+    a.interestsLove?.length && `interests LOVED (anchor most days on these): ${list(a.interestsLove)}`,
+    (a.interests?.length || a.interestsOther) && `interests liked (fill gaps with these): ${list([...(a.interests || []).filter(i => !(a.interestsLove || []).includes(i)), a.interestsOther])}`,
+    a.visits && `japan_experience: ${{ first: "first visit — include the essential highlights", returning: "been before — skip the standard first-timer highlights unless they ask", expert: "knows Japan well — favour lesser-known places and deeper experiences" }[a.visits]}`,
+    a.discovery && `discovery: ${{ icons: "famous highlights", mix: "mostly highlights plus a few hidden gems", gems: "hidden gems where locals go, few big-name sights" }[a.discovery]}`,
+    a.vibe !== undefined && a.vibe !== "" && `traditional_vs_modern: ${["all traditional", "mostly traditional", "balanced", "mostly modern", "all modern"][+a.vibe] || "balanced"}`,
+    a.cities?.length && `must_visit: ${list(a.cities)}`,
     a.must && `Must do: ${a.must}`,
     a.avoid && `Avoid: ${a.avoid}`,
-    a.notes && `Notes: ${a.notes}`,
+    a.hotelPrefs?.length && `Hotel priorities: ${list(a.hotelPrefs)}`,
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -122,7 +122,7 @@ function outlinePrompt(a, dates) {
   return `TODAY: ${new Date().toISOString().slice(0, 10)}
 TRAVELLER
 ${profileText(a)}
-
+${fixedText(a)}
 ${when} Reply with JSON only, in exactly this shape:
 {${flexible ? `
   "start": "YYYY-MM-DD, the first day you chose",` : ""}
@@ -133,33 +133,71 @@ ${when} Reply with JSON only, in exactly this shape:
   "budgetNote": "one short clause comparing it with their budget, or empty",
   "cities": [{"key": "kebab-case", "name": "City", "country": "Country", "timeZone": "IANA zone, e.g. Europe/Paris"}],
   "stays": [{"key": "kebab-case", "name": "Exact real hotel name", "city": "city-key", "query": "hotel name, neighbourhood, city", "why": "one sentence"}],
-  "days": [{"d": 1, "date": "YYYY-MM-DD", "city": "city-key", "stay": "stay-key or null", "title": "Short day title", "purpose": "one sentence", "theme": "2–4 words", "walking": "Light|Moderate|Heavy", "highlights": ["Exact place name", "…"]}],
-  "tips": ["practical tip", "…"]
+  "days": [{"d": 1, "date": "YYYY-MM-DD", "city": "city-key", "stay": "stay-key or null", "title": "Short day title", "purpose": "one sentence", "theme": "2–4 words", "walking": "Light|Moderate|Heavy", "highlights": ["Exact place name", "…"], "meals": ["Exact lunch restaurant", "Exact dinner restaurant"]}],
+  "tips": ["practical tip", "…"],
+  "why": ["3–6 short bullets in markdown: the key decisions that shape this plan and why (route order and nights, what you cut or swapped, date bottlenecks such as holidays or Saturdays, crowd timing, diet and onsen choices). Mention places as {{key}} when they are cities or stays."],
+  "chefCard": "${a.diet?.length || a.allergies ? "a short Japanese dietary card (Japanese text, then an English line) for restaurants, per the skill's Matrix E" : "empty string"}"
 }
 Rules:
 - "days" has exactly ${n} entries, d = 1…${n}, ${flexible ? 'on consecutive dates from "start"' : `dates ${dates[0]} … ${dates[n - 1]} in order`}.${+a.flex ? `
 - They can move the trip up to ${a.flex} day${+a.flex > 1 ? "s" : ""} either way. Plan for the dates given, but if moving would clearly help (a closure, a festival, a better weekday), say so in the summary.` : ""}
 - "stay" is where they sleep that night; null only on a final departure day with no night.
 - "highlights" are the 1–4 main places of each day. Never repeat a highlight on another day.
+- "meals" are real, specific restaurants for that day's lunch and dinner, near where they are at that time and safe for their diet. Never use a restaurant twice in the trip; use "" for a meal on a travel day with no time for it.
 - 3–6 tips.`;
 }
+
+/* What the booking step already settled: the planner must build around it. */
+function fixedText(a) {
+  const out = [];
+  if (a.flights?.in || a.flights?.out) {
+    out.push("FLIGHTS (fixed)");
+    if (a.flights.in) out.push(`- Arrives ${a.flights.in.to?.id} at ${a.flights.in.to?.time} (${a.flights.in.number || "flight"}). Day 1 starts on landing: plan airport transfer per section 6.`);
+    if (a.flights.out) out.push(`- Departs ${a.flights.out.from?.id} at ${a.flights.out.from?.time} (${a.flights.out.number || "flight"}). Plan the last day to reach that airport 2.5 hours early.`);
+  }
+  if (a.route?.length) {
+    out.push("ROUTE (fixed, in this order)");
+    a.route.forEach(c => out.push(`- ${c.name} (key "${c.key}"): ${c.nights} night${c.nights === 1 ? "" : "s"}${c.area ? `, staying in ${c.area}` : ""}`));
+  }
+  if (a.hotels?.length) {
+    out.push('HOTELS (fixed — use these exact names as "stays", with these keys)');
+    a.hotels.forEach(h => out.push(`- key "${h.key}": ${h.name}, ${h.cityName}, check-in ${h.checkIn}, check-out ${h.checkOut}${h.booked ? " (booked)" : ""}`));
+  }
+  return (out.length ? "\n" + out.join("\n") + "\n" : "") + deckText(a);
+}
+
+/* What they said on the experience deck: yes = include, maybe = if it fits, no = never. */
+function deckText(a) {
+  const d = a.deck; if (!d) return "";
+  const l = xs => xs.map(x => `${x.title} (${x.id})`).join("; ");
+  return [
+    d.yes?.length && `EXPERIENCES THEY SAID YES TO (include every one, using the catalog id): ${l(d.yes)}`,
+    d.maybe?.length && `EXPERIENCES THEY MIGHT LIKE (include if they fit well): ${l(d.maybe)}`,
+    d.no?.length && `EXPERIENCES THEY SAID NO TO (never include these or close look-alikes): ${l(d.no)}`,
+  ].filter(Boolean).join("\n") + "\n";
+}
+
+/* Sources the planner may cite for an item, beyond the curated catalog. */
+const CITE = ["Tabelog", "Japan-Guide", "Reddit r/JapanTravel", "Michelin Guide", "HappyCow", "Halal Gourmet Japan", "Good Coffee", "Tokyo Art Beat", "Resident Advisor", "tattoo-friendly.jp", "Ikyu", "Japan Meteorological Corp", "fuji-san.info", "Tokyo Cheapo", "Eater"];
 
 function daysPrompt(a, outline, from, to) {
   const brief = {
     title: outline.title, cities: outline.cities, stays: outline.stays,
-    days: outline.days.map(d => ({ d: d.d, date: d.date, city: d.city, stay: d.stay, title: d.title, purpose: d.purpose, highlights: d.highlights })),
+    days: outline.days.map(d => ({ d: d.d, date: d.date, city: d.city, stay: d.stay, title: d.title, purpose: d.purpose, highlights: d.highlights, meals: d.meals })),
   };
+  const taken = outline.days.filter(d => d.d < from || d.d > to).flatMap(d => d.meals || []).filter(Boolean);
   return `TRAVELLER
 ${profileText(a)}
-
-TRIP OUTLINE (fixed — do not change the route, stays or other days)
+${fixedText(a)}
+${taken.length ? `RESTAURANTS OTHER DAYS ALREADY USE (never use these on days ${from}–${to}): ${taken.join("; ")}\n` : ""}TRIP OUTLINE (fixed — do not change the route, stays or other days)
 ${JSON.stringify(brief)}
 
 Write days ${from}–${to} in full. Reply with JSON only, in exactly this shape:
 {
   "days": [{
     "d": ${from},
-    "items": [{"s": "HH:MM", "e": "HH:MM", "t": "What they do, specific", "place": "place-key or null", "n": "one practical sentence", "k": "Sight|Sit-down|Browse|Experience|Walk|Booked|Travel", "c": "sight|nature|food|hotel|shop|transport|city", "mode": "walk|rail|bus|car|flight", "allDay": false}],
+    "items": [{"s": "HH:MM", "e": "HH:MM", "t": "What they do, specific", "place": "place-key or null", "n": "one practical sentence", "k": "Sight|Sit-down|Browse|Experience|Walk|Booked|Travel", "c": "sight|nature|food|hotel|shop|transport|city", "mode": "walk|rail|bus|car|flight", "allDay": false,
+      "src": [{"id": "JP-041"}, {"name": "Tabelog", "detail": "3.62"}]}],
     "planB": ["rain or tired alternative"],
     "alts": ["place-key"],
     "spend": "the one thing worth paying for today",
@@ -173,7 +211,13 @@ Rules:
 - "place" is a key from "places", or a stay key or city key from the outline, or null for generic items (e.g. "Breakfast at the hotel").
 - Every place you reference (items and alts) appears in "places" unless it is a stay or city from the outline.
 - Use each day's highlights from the outline on that day. Do not use another day's highlights.
-- Flights, check-in/out and hotel nights may be "allDay": true without times.`;
+- Lunch and dinner are the day's "meals" from the outline; where a meal is "", choose a new restaurant. Breakfast, coffee and snacks are your choice, but never a restaurant that appears on another day.
+- Only check in at the stays in the outline. A day trip ends back at that night's stay; for baths on a day trip use a day-use onsen, never a ryokan "check-in".
+- "t" and "n" are final text for the traveller: never think aloud, correct yourself or ask questions.
+- Flights, check-in/out and hotel nights may be "allDay": true without times.
+- "src" says why each item is recommended: {"id": "JP-xxx"} for an experience taken from the curated catalog in your instructions (copy the id exactly; never invent one), plus {"name", "detail"} naming the outside source behind it, from this list only: ${CITE.join(", ")}. Restaurants, cafés and bars always name Tabelog (with its score), Michelin Guide or HappyCow; sights name Japan-Guide or another listed source. "detail" is short (a Tabelog score, an award, what the source says). Use [] only for transfers and hotel breakfast.
+- Every meal is a specific, real restaurant with its own place key — never "a local izakaya" or "a soba shop like…".
+- Dietary restrictions are hard rules: every meal must be safe for them (see Matrix E). Never schedule a meal whose main dish they cannot eat, and never rely on "ask for…" workarounds when the standard dish breaks the rule (for a pescatarian, no chicken- or pork-broth ramen). This covers snacks and street food too.`;
 }
 
 /* ---------- Building the trip ---------- */
@@ -190,6 +234,13 @@ function cleanDay(raw, base, known, places) {
     item.c = KINDS.includes(c) ? c : places[item.p]?.kind || "sight";
     const mode = String(it.mode || "").toLowerCase();
     if (MODES.includes(mode)) item.mode = mode;
+    const src = (Array.isArray(it.src) ? it.src : []).map(s => {
+      const id = /^#?(JP-(\d{3}))$/.exec(String(s?.id || ""));
+      if (id && +id[2] >= 1 && +id[2] <= 300) return { id: id[1] };
+      if (s?.name && CITE.includes(s.name)) return { name: s.name, detail: String(s.detail || "").slice(0, 40) };
+      return null;
+    }).filter(Boolean).slice(0, 4);
+    if (src.length) item.src = src;
     let s = normTime(it.s), e = normTime(it.e);
     if (it.allDay || !s) { item.allDay = true; }
     else {
@@ -222,7 +273,9 @@ function planMarkdown(trip, outline) {
     ...[...stays].map(([id, ds]) => `- {{${id}}} — ${P[P[id]?.city]?.name || P[id]?.city || ""}, ${range(ds)}${outline.stays?.find(s => slug(s.key) === id)?.why ? ": " + outline.stays.find(s => slug(s.key) === id).why : ""}`),
     `## Day by day`,
     ...trip.days.map(d => `${d.d}. **${fmtDate(d.date)}, ${d.title}:** ${d.purpose || ""}`),
+    outline.why?.length ? `## Why it looks like this\n${outline.why.map(t => `- ${t}`).join("\n")}` : "",
     outline.tips?.length ? `## Good to know\n${outline.tips.map(t => `- ${t}`).join("\n")}` : "",
+    outline.chefCard ? `## Dietary card for restaurants\n${outline.chefCard}` : "",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -271,12 +324,13 @@ async function generate(a, { onProgress = () => {}, signal } = {}) {
   if (!start) throw new Error("Pick a month that hasn't ended yet.");
   let dates = Array.from({ length: n }, (_, i) => addDays(start, i));
   const system = await skill();
+  const scope = TripAPI.skillScope(a);
 
   // 1. Outline
   onProgress({ step: "outline", text: "Planning the route and where you'll stay…" });
   let outline;
   for (let attempt = 0; attempt < 2 && !outline; attempt++) {
-    const o = await callJSON(system, outlinePrompt(a, dates), { signal, maxTokens: 6000 });
+    const o = await callJSON(system, outlinePrompt(a, dates), { signal, maxTokens: 7000, scope });
     if (Array.isArray(o?.days) && o.days.length >= n && Array.isArray(o.cities) && o.cities.length) outline = o;
   }
   if (!outline) throw new Error("The planner did not return a complete route. Try again.");
@@ -285,12 +339,30 @@ async function generate(a, { onProgress = () => {}, signal } = {}) {
     a = { ...a, start: dates[0], end: dates[n - 1] };
   }
   outline.days = outline.days.slice(0, n).map((d, i) => ({ ...d, d: i + 1, date: dates[i], city: slug(d.city), stay: d.stay ? slug(d.stay) : null }));
+  // Days are written in parallel batches, so the outline owns lunch and dinner: one restaurant, one meal.
+  const eaten = new Set();
+  outline.days.forEach(d => {
+    d.meals = (Array.isArray(d.meals) ? d.meals : []).slice(0, 2).map(m => {
+      const k = slug(m);
+      if (!k || eaten.has(k)) return "";
+      eaten.add(k);
+      return String(m).slice(0, 80);
+    });
+  });
 
   const places = {};
   for (const c of outline.cities) {
     const key = slug(c.key || c.name);
     if (key) places[key] = { id: key, name: String(c.name || key), kind: "city", city: key, country: c.country || "", tz: validTz(c.timeZone) ? c.timeZone : "", query: [c.name, c.country].filter(Boolean).join(", ") };
   }
+  for (const h of a.hotels || []) {
+    places[h.key] = { id: h.key, name: h.name, kind: "hotel", city: slug(h.city), query: h.address ? `${h.name}, ${h.address}` : `${h.name}, ${h.cityName}, Japan`,
+      ...(h.lat != null ? { lat: h.lat, lng: h.lng } : {}), booking: h.booked ? { booked: true } : { price: h.price, currency: h.currency, source: h.source, link: h.link } };
+  }
+  if (a.hotels?.length) outline.days.forEach(d => {
+    const h = a.hotels.find(h => h.checkIn <= d.date && d.date < h.checkOut);
+    d.stay = h ? h.key : null;
+  });
   for (const s of outline.stays || []) {
     const key = slug(s.key || s.name);
     if (key && !places[key]) places[key] = { id: key, name: String(s.name || key), kind: "hotel", city: slug(s.city), query: s.query || `${s.name}, ${places[slug(s.city)]?.name || ""}` };
@@ -306,7 +378,7 @@ async function generate(a, { onProgress = () => {}, signal } = {}) {
   };
   onProgress({ step: "days", text: `Writing the days (0 of ${n})…`, done: 0, total: n, preview });
   const results = await pool(chunks, 3, async ([from, to]) => {
-    const r = await callJSON(system, daysPrompt(a, outline, from, to), { signal });
+    const r = await callJSON(system, daysPrompt(a, outline, from, to), { signal, scope });
     doneChunks++;
     const written = Math.min(n, chunks.slice(0, doneChunks).reduce((s, [f, t]) => s + t - f + 1, 0));
     onProgress({ step: "days", text: `Writing the days (${written} of ${n})…`, done: written, total: n, range: [from, to] });
@@ -357,7 +429,7 @@ async function generate(a, { onProgress = () => {}, signal } = {}) {
     id: TripStore.newId(),
     createdAt: now.toISOString(),
     meta: {
-      title: String(outline.title || a.destination).slice(0, 60), emoji: String(outline.emoji || "").slice(0, 4), version: "V1",
+      title: String(outline.title || "Japan").slice(0, 60), emoji: String(outline.emoji || "").slice(0, 4), version: "V1",
       start: dates[0], end: dates[n - 1], days: n, nights: n - 1,
       updated: now.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
       budget: String(outline.budget || ""), budgetNote: String(outline.budgetNote || ""),
@@ -369,13 +441,18 @@ async function generate(a, { onProgress = () => {}, signal } = {}) {
     days,
   };
   trip.plan = planMarkdown(trip, outline);
+  // The chat opens with what the plan is and why it looks the way it does.
+  const why = (outline.why || []).map(String).filter(Boolean).slice(0, 6);
   trip.chat = [
-    { role: "user", md: "Plan my trip:\n" + profileText(a).split("\n").map(l => "- " + l).join("\n") },
-    { role: "ai", md: `${outline.summary || ""}\n\nThe whole plan is in the itinerary, calendar and map. Ask me to move, add or drop anything — I'll show the changes for you to approve first.` },
+    { role: "ai", md: [
+      outline.summary || "",
+      why.length ? `**Why it looks like this**\n${why.map(w => `- ${w}`).join("\n")}` : "",
+      "Ask me to change anything — swap a restaurant, slow a day down, add a day trip. I'll show the changes for you to approve first.",
+    ].filter(Boolean).join("\n\n") },
   ];
   onProgress({ step: "done", text: "Your trip is ready." });
   return trip;
 }
 
-window.TripGenerator = { generate, locate, profileText };
+window.TripGenerator = { generate, locate, profileText, deckText };
 })();

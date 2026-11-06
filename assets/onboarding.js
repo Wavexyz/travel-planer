@@ -22,7 +22,7 @@ const fmtRange = (a, b) => {
 
 /* ---------- Modes ---------- */
 function show(panel) {
-  for (const id of ["ob-welcome", "ob-form", "ob-working"]) $("#" + id).hidden = id !== panel;
+  for (const id of ["ob-welcome", "ob-form", "ob-book", "ob-working"]) $("#" + id).hidden = id !== panel;
 }
 function openOnboarding(panel = "ob-welcome") {
   document.body.dataset.mode = "onboard";
@@ -240,31 +240,169 @@ function goStep(i) {
   setTimeout(() => $('.rcal-day[tabindex="0"], input:not([type=radio]):not([type=checkbox]):not([type=hidden]), textarea, select', steps[step])?.focus(), 30);
 }
 function setError(text) { const el = $("#ob-error"); el.hidden = !text; el.textContent = text; }
+const MULTI = ["interests", "months", "cities", "food", "diet", "hotelCity", "hotelName", "hotelIn", "hotelOut"];
 function answers() {
   const fd = new FormData(form);
-  const a = {};
+  const a = { destination: "Japan" };
   for (const [k, v] of fd) {
-    if (k === "interests" || k === "months") (a[k] ||= []).push(v);
+    if (MULTI.includes(k)) (a[k] ||= []).push(String(v).trim());
     else a[k] = String(v).trim();
   }
   if (a.flex === "any") { delete a.start; delete a.end; }
   else { delete a.duration; delete a.months; }
+  // Hotels already booked, from the rows on the last step.
+  a.bookedHotels = (a.hotelName || []).map((name, i) => ({ name, cityName: a.hotelCity[i], checkIn: a.hotelIn[i], checkOut: a.hotelOut[i] }))
+    .filter(h => h.name || h.cityName);
+  for (const k of ["hotelCity", "hotelName", "hotelIn", "hotelOut"]) delete a[k];
+  if (a.hotelsStatus === "help") a.bookedHotels = [];
+  a.interestsLove = $$('[name="interests"][data-love="1"]:checked', form).map(i => i.value);
   return a;
 }
+const STEP = { dates: 0, interests: 2, flights: 9, hotels: 10 };
 function validate(i) {
   const a = answers();
-  if (i === 0 && !a.destination) return "Tell us where you want to go.";
-  if (i === 1 && a.flex === "any") {
+  if (i === STEP.dates && a.flex === "any") {
     if (!a.months?.length) return "Pick at least one month.";
     if (!(+a.duration >= 1 && +a.duration <= MAX_DAYS)) return `Trips can be 1 to ${MAX_DAYS} days for now.`;
-  } else if (i === 1) {
+  } else if (i === STEP.dates) {
     if (!a.start || !a.end) return "Choose the first and last day.";
     const n = Math.round((new Date(a.end + "T12:00:00") - new Date(a.start + "T12:00:00")) / 864e5) + 1;
     if (n < 1) return "The last day must be on or after the first day.";
     if (n > 30) return "Trips can be up to 30 days for now.";
   }
+  if (i === STEP.interests && !a.interests?.length && !a.interestsOther) return "Pick at least one thing you'd love to do.";
+  if (i === STEP.flights || i === STEP.hotels) {
+    const needsDates = i === STEP.flights ? a.flightsStatus !== "booked" : a.hotelsStatus !== "booked";
+    if (needsDates && a.flex === "any") return "For this we need exact dates. Go back to the first step and pick them.";
+  }
+  if (i === STEP.flights) {
+    if (a.flightsStatus === "booked") {
+      if (!a.inFlight || !a.inDate || !/^[A-Za-z]{3}$/.test(a.inFrom)) return "Add the flight into Japan: number, date and the airport it leaves from.";
+      if (!a.outFlight || !a.outDate || !/^[A-Za-z]{3}$/.test(a.outTo)) return "Add the flight home: number, date and the airport it flies to.";
+    }
+    if (a.flightsStatus === "help" && !/^[A-Z]{3}(,[A-Z]{3})*$/.test(a.homeAirport || "")) return "Pick the city or airport you fly from.";
+    if (a.flightsStatus === "self" && (!a.selfInTime || !a.selfOutTime)) return "Add roughly when you land and when you leave.";
+  }
+  if (i === STEP.hotels) {
+    if (a.hotelsStatus !== "help") {
+      if (!a.bookedHotels.length) return "List the hotels you've booked, or choose “None yet”.";
+      if (a.bookedHotels.some(h => !h.name || !h.cityName || !h.checkIn || !h.checkOut || h.checkOut <= h.checkIn)) return "Each booked hotel needs a city, a name and check-in before check-out.";
+    }
+  }
   return "";
 }
+
+/* ---------- Conditional questions ---------- */
+function syncConditional() {
+  const v = n => form.elements[n]?.value;
+  $("#ob-fl-booked").hidden = v("flightsStatus") !== "booked";
+  $("#ob-fl-help").hidden = v("flightsStatus") !== "help";
+  $("#ob-fl-self").hidden = v("flightsStatus") !== "self";
+  $("#ob-ht-booked").hidden = v("hotelsStatus") === "help";
+  $("#ob-onsen-more").hidden = v("onsen") === "no";
+  if (!$("#ob-ht-booked").hidden && !$("#ob-hotel-rows").children.length) addHotelRow();
+}
+function addHotelRow() {
+  const row = document.createElement("div");
+  row.className = "ob-row ob-hotel-row";
+  row.innerHTML = `<label class="field"><span class="field-k">City</span><input name="hotelCity" placeholder="Tokyo"></label>
+    <label class="field"><span class="field-k">Hotel</span><input name="hotelName" placeholder="Hotel name"></label>
+    <label class="field"><span class="field-k">Check-in</span><input type="date" name="hotelIn"></label>
+    <label class="field"><span class="field-k">Check-out</span><input type="date" name="hotelOut"></label>`;
+  $("#ob-hotel-rows").append(row);
+}
+form.addEventListener("change", e => { if (["flightsStatus", "hotelsStatus", "onsen"].includes(e.target.name)) { setError(""); syncConditional(); } });
+$("#ob-add-hotel").addEventListener("click", addHotelRow);
+// "Who's going" sets a sensible party size; children only matter for families.
+const PARTY_ADULTS = { solo: 1, couple: 2, family_with_kids: 2, friends_group: 3, seniors: 2 };
+function syncParty(fromParty) {
+  const party = form.elements.party.value;
+  if (fromParty) form.elements.adults.value = PARTY_ADULTS[party] || 2;
+  $("#ob-kids").hidden = party !== "family_with_kids";
+  if (party !== "family_with_kids") form.elements.kids.value = "";
+}
+form.addEventListener("change", e => { if (e.target.name === "party") syncParty(true); });
+form.addEventListener("click", e => {
+  const b = e.target.closest("[data-count]"); if (!b) return;
+  const input = form.elements[b.dataset.count];
+  input.value = Math.max(+input.min || 1, Math.min(+input.max || 9, (+input.value || 0) + +b.dataset.d));
+});
+syncParty(false);
+// Example chips add their text to the box below them.
+form.addEventListener("click", e => {
+  const b = e.target.closest(".ob-chip-add"); if (!b) return;
+  const box = form.elements[b.closest(".ob-add").dataset.target];
+  const parts = box.value.split(/\s*,\s*/).filter(Boolean);
+  if (!parts.includes(b.textContent)) box.value = [...parts, b.textContent].join(", ");
+  b.classList.add("on");
+});
+
+/* Interest cards: tap once to like, twice to love, a third time to clear. */
+form.addEventListener("click", e => {
+  const card = e.target.closest(".ob-card"), input = card?.querySelector('input[name="interests"]');
+  if (!input) return;
+  e.preventDefault();
+  const level = !input.checked ? 1 : input.dataset.love === "1" ? 0 : 2;
+  input.checked = level > 0;
+  input.dataset.love = level === 2 ? "1" : "";
+  card.classList.toggle("love", level === 2);
+  input.setAttribute("aria-label", `${card.querySelector("b").textContent}: ${["not chosen", "like", "love"][level]}`);
+  setError("");
+});
+
+/* ---------- Airport search: type a city or airport, pick from the list ---------- */
+let airports = null;
+const loadAirports = () => airports ||= fetch("assets/airports.json").then(r => r.json()).catch(() => []);
+function airportMatches(list, q) {
+  q = q.trim().toLowerCase(); if (q.length < 2) return [];
+  const scored = [];
+  for (const [code, name, city, country, big, kw] of list) {
+    const c = (city || "").toLowerCase(), n = name.toLowerCase(), k = (kw || "").toLowerCase();
+    let s = code.toLowerCase() === q ? 100 : c.startsWith(q) ? 60 : n.startsWith(q) ? 50 : n.includes(q) ? 35 : c.includes(q) ? 30 : k.includes(q) ? 20 : 0;
+    if (s) scored.push({ code, name, city, country, s: s + (big ? 8 : 0) });
+  }
+  scored.sort((a, b) => b.s - a.s);
+  const top = scored.slice(0, 7);
+  // Several big airports for one city: offer them all at once.
+  const big = scored.filter(x => x.s >= 38 && x.country === top[0]?.country).slice(0, 6);
+  if (big.length > 1 && top[0].s < 100) top.unshift({ all: true, codes: big.map(x => x.code), name: `All airports: ${big.map(x => x.code).join(", ")}`, city: q.replace(/^./, c => c.toUpperCase()) });
+  return top;
+}
+function airportPicker(box) {
+  const name = box.dataset.ap, single = !!box.dataset.single;
+  box.innerHTML = `<div class="ap-in"><span class="ap-chips"></span><input type="text" autocomplete="off" placeholder="${single ? "City or airport" : "e.g. London"}" role="combobox" aria-expanded="false" aria-autocomplete="list"></div>
+    <input type="hidden" name="${name}"><input type="hidden" name="${name}Label"><ul class="ap-list" role="listbox" hidden></ul>`;
+  const input = $("input[type=text]", box), hidden = $("input[type=hidden]", box), list = $(".ap-list", box), chips = $(".ap-chips", box);
+  let picked = [], opts = [], at = 0;
+  const paint = () => {
+    hidden.value = picked.map(p => p.code).join(",");
+    hidden.nextElementSibling.value = picked.map(p => p.label.replace(/ · all airports$/, "")).join(", ");
+    chips.innerHTML = picked.map((p, i) => `<span class="ap-chip">${esc(p.label)}<button type="button" data-x="${i}" aria-label="Remove ${esc(p.label)}">×</button></span>`).join("");
+    input.placeholder = picked.length ? "" : single ? "City or airport" : "e.g. London";
+  };
+  const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); };
+  const show = () => {
+    list.innerHTML = opts.map((o, i) => `<li role="option" data-i="${i}" aria-selected="${i === at}">${o.all ? `<b>${esc(o.city)}</b> <span>${esc(o.name)}</span>` : `<b>${esc(o.code)}</b> ${esc(o.name)} <span>${esc(o.city)}, ${esc(o.country)}</span>`}</li>`).join("");
+    list.hidden = !opts.length; input.setAttribute("aria-expanded", String(!!opts.length));
+  };
+  const choose = o => {
+    const add = o.all ? [{ code: o.codes.join(","), label: `${o.city} · all airports` }] : [{ code: o.code, label: `${o.code} · ${o.city || o.name}` }];
+    picked = single ? (o.all ? [{ code: o.codes[0], label: `${o.codes[0]} · ${o.city}` }] : add) : [...picked, ...add.filter(a => !picked.some(p => p.code === a.code))];
+    input.value = ""; opts = []; close(); paint(); setError("");
+  };
+  input.addEventListener("input", async () => { opts = airportMatches(await loadAirports(), input.value); at = 0; show(); });
+  input.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); at = (at + (e.key === "ArrowDown" ? 1 : -1) + opts.length) % (opts.length || 1); show(); }
+    else if (e.key === "Enter" && !list.hidden && opts[at]) { e.preventDefault(); e.stopPropagation(); choose(opts[at]); }
+    else if (e.key === "Escape") close();
+    else if (e.key === "Backspace" && !input.value && picked.length) { picked.pop(); paint(); }
+  });
+  list.addEventListener("mousedown", e => { const li = e.target.closest("li"); if (li) { e.preventDefault(); choose(opts[+li.dataset.i]); } });
+  chips.addEventListener("click", e => { const x = e.target.closest("[data-x]"); if (x) { picked.splice(+x.dataset.x, 1); paint(); input.focus(); } });
+  input.addEventListener("blur", () => setTimeout(close, 120));
+}
+$$(".ap", form).forEach(airportPicker);
+syncConditional();
 $("#ob-next").addEventListener("click", () => {
   const err = validate(step);
   if (err) { setError(err); return; }
@@ -284,12 +422,18 @@ form.addEventListener("submit", e => {
   if (!TripSettings.deepseekKey() || !TripGoogle.hasKey()) {
     TripSettings.open({
       note: "Add both keys to generate the trip.",
-      onSaved: () => { if (TripSettings.deepseekKey() && TripGoogle.hasKey()) run(a); },
+      onSaved: () => { if (TripSettings.deepseekKey() && TripGoogle.hasKey()) book(a); },
     });
     return;
   }
-  run(a);
+  book(a);
 });
+
+/* ---------- Flights and hotels, before the itinerary ---------- */
+function book(a) {
+  show("ob-book");
+  TripBooking.start(a, { onDone: run, onBack: () => { show("ob-form"); goStep(steps.length - 1); } });
+}
 
 /* ---------- Generation ---------- */
 const ORDER = ["outline", "days", "places"];
@@ -338,7 +482,7 @@ function startScene(a) {
   Object.assign(gen, { step: "", frac: 0, shown: 0 });
   $("#gen-emoji").textContent = "🧳";
   $("#gen-title").textContent = "Building your trip";
-  gen.where = a.from && a.destination ? `${a.from} → ${a.destination}` : a.destination;
+  gen.where = a.route?.length ? a.route.map(c => c.name).join(" → ") : "Japan";
   const n = a.flex === "any" ? +a.duration : spanDays(a.start, a.end);
   const when = a.flex === "any" ? `${n} day${n > 1 ? "s" : ""}, starting in ${orList(a.months.map(monthName))}` : `${fmtRange(a.start, a.end)} · ${n} day${n > 1 ? "s" : ""}`;
   $("#gen-sub").textContent = [gen.where, when].filter(Boolean).join(" · ");
@@ -391,7 +535,7 @@ async function run(a) {
     TripStore.open(trip.id);
   } catch (err) {
     stopScene();
-    if (err?.name === "AbortError") { show("ob-form"); return; }
+    if (err?.name === "AbortError") { show("ob-book"); return; }
     const el = $("#ob-gen-error");
     el.hidden = false;
     el.textContent = err?.status === 401 || err?.status === 403
@@ -408,7 +552,7 @@ async function run(a) {
 }
 $("#ob-stop").addEventListener("click", () => controller?.abort());
 $("#ob-retry").addEventListener("click", () => lastAnswers && run(lastAnswers));
-$("#ob-edit").addEventListener("click", () => { show("ob-form"); goStep(0); });
+$("#ob-edit").addEventListener("click", () => { show("ob-book"); });
 
 /* ---------- Trips menu ---------- */
 const menu = $("#trips-menu"), menuBtn = $("#trips-btn");

@@ -380,6 +380,7 @@ function renderPeek(pid) {
         ${prop("Rating", p.rating ? ratingHtml(p) + " on Google" : "")}
         ${prop("Address", p.address ? esc(p.address) : "")}
         ${prop("Google Maps", `<a href="${gmapsUrl(p)}" target="_blank" rel="noopener">Open ↗</a>${dir ? ` · <a href="${dir}" target="_blank" rel="noopener">Transit from ${esc(prev.name)} ↗</a>` : ""}`)}
+        ${prop("Why it's here", (VISITS[pid] || []).map(v => srcHtml(v.it)).find(Boolean) || "")}
         ${prop("On your trip", (VISITS[pid] || []).map(v => `<button type="button" class="visit" data-day-visit="${v.day.d}"><b>Day ${v.day.d}</b><span>${fmtDay(v.day.date)}${v.it.s ? " · " + v.it.s : ""}</span></button>`).join(""))}
       </div>
       ${p.desc ? `<p style="margin:4px 0 0">${esc(p.desc)}</p>` : ""}
@@ -450,6 +451,26 @@ function markChip(el, n) {
   const on = $(`.daychip[data-day="${n}"]`, el);
   if (on) el.scrollTo({ left: on.offsetLeft - el.clientWidth / 2 + on.clientWidth / 2, behavior: "smooth" });
 }
+/* Why an item is in the plan. Catalog entries come from the curated Japan guide the
+   planner was given (checked); named sources are the planner's own citation (not checked live). */
+const SRC_DOMAIN = {
+  "Tabelog": "tabelog.com", "Japan-Guide": "japan-guide.com", "Reddit r/JapanTravel": "reddit.com", "Michelin Guide": "guide.michelin.com",
+  "HappyCow": "happycow.net", "Halal Gourmet Japan": "halalgourmet.jp", "Good Coffee": "goodcoffee.me", "Tokyo Art Beat": "tokyoartbeat.com",
+  "Resident Advisor": "ra.co", "tattoo-friendly.jp": "tattoo-friendly.jp", "Ikyu": "ikyu.com", "Japan Meteorological Corp": "n-kishou.com",
+  "fuji-san.info": "fuji-san.info", "Tokyo Cheapo": "tokyocheapo.com", "Eater": "eater.com",
+};
+function srcHtml(it) {
+  if (!it.src?.length) return "";
+  return `<div class="srcs">${it.src.map(s => s.id
+    ? `<span class="src verified" title="From our curated list of 300 Japan experiences (${esc(s.id)})"><span class="src-mark" aria-hidden="true">✦</span>Curated pick</span>`
+    : `<span class="src cited" title="Cited by the planner — not checked live">${SRC_DOMAIN[s.name] ? `<img src="https://www.google.com/s2/favicons?domain=${SRC_DOMAIN[s.name]}&sz=32" alt="" loading="lazy">` : ""}${esc(s.name)}${s.detail ? ` · ${esc(s.detail)}` : ""}</span>`).join("")}</div>`;
+}
+function bookingHtml(b) {
+  if (!b) return "";
+  if (b.booked) return '<span class="booking">Booked</span>';
+  const price = b.price != null ? new Intl.NumberFormat("en", { style: "currency", currency: b.currency || "USD", maximumFractionDigits: 0 }).format(b.price) : "";
+  return `<span class="booking">Not booked yet${price ? ` · from ${price} a night at ${esc(b.source || "")}` : ""}${b.link ? ` · <a href="${esc(b.link)}" target="_blank" rel="noopener">Book ↗</a>` : ""}</span>`;
+}
 function renderItinerary() {
   $("#itin-list").innerHTML = DAYS.map(day => {
     const items = day.items.map(it => {
@@ -463,6 +484,7 @@ function renderItinerary() {
           <h3>${esc(it.t)}</h3>
           <div class="meta">${ytag}${it.p ? chip(it.p) + ratingSlot(it.p) : ""}${p.suggested ? '<span class="tag sug">Suggestion</span>' : ""}${it.added ? `<span class="tag added">Added</span><button type="button" class="added-x" data-remove="${esc(it.sid)}" aria-label="Remove ${esc(it.t)}" title="Remove this added activity">×</button>` : ""}</div>
           ${it.n ? `<p>${esc(it.n)}</p>` : ""}
+          ${srcHtml(it)}
         </div>
       </div>`;
     }).join("");
@@ -470,7 +492,7 @@ function renderItinerary() {
       <summary><span class="tri" aria-hidden="true">${ARROW.r}</span><h2>${esc(day.title)}</h2><span class="when">Day ${day.d} · ${fmtDay(day.date)}${day.city && P[day.city] ? `<b>${esc(P[day.city].name)}</b>` : ""}</span></summary>
       <div class="day-body">
         ${day.purpose ? `<p class="purpose">${esc(day.purpose)}</p>` : ""}
-        ${day.stay ? `<div class="callout"><span class="emo" aria-hidden="true">${icon("hotel")}</span><div>Tonight: ${chip(day.stay)}</div></div>` : ""}
+        ${day.stay ? `<div class="callout"><span class="emo" aria-hidden="true">${icon("hotel")}</span><div>Tonight: ${chip(day.stay)}${bookingHtml(P[day.stay]?.booking)}</div></div>` : ""}
         ${items}
         ${planB(day)}
       </div>
@@ -962,13 +984,89 @@ addEventListener("resize", () => {
 let map = null, markers = [], routeOverlays = [], mapReady = false, mapLoading = false, pendingRender = null;
 const readyQueue = [];
 const dark = () => document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+/* Routes: thick, cased lines with one clear colour per mode (walk is dotted, flights dashed). */
 const ROUTE_STYLE = {
-  walk: { color: "#2f9e44", width: 3.4, dash: "dot" },
-  rail: { color: "#2383e2", width: 4.2 },
-  bus: { color: "#e8590c", width: 4.0 },
-  car: { color: "#7048e8", width: 3.0, dash: "dash" },
-  flight: { color: "#868e96", width: 2.2, dash: "dash" },
+  walk: { color: "#0a84ff", width: 4.5, dash: "dot" },
+  rail: { color: "#0a84ff", width: 6, arrows: true },
+  bus: { color: "#ff9f0a", width: 5.5, arrows: true },
+  car: { color: "#5e5ce6", width: 5.5, arrows: true },
+  flight: { color: "#8e8e93", width: 2.5, dash: "dash" },
 };
+/* A quiet, Apple-Maps-like base map: soft land, muted water, white roads, no business icons,
+   no road shields, faint rail lines. Applied as JSON styles, so no Cloud Map ID is needed. */
+const MAP_STYLES = {
+  light: [
+    { elementType: "geometry", stylers: [{ color: "#f4f3ef" }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#6e6b66" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#f4f3ef" }, { weight: 3 }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+    { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#3c3a36" }] },
+    { featureType: "administrative.neighborhood", elementType: "labels.text.fill", stylers: [{ color: "#9a968f" }] },
+    { featureType: "poi", stylers: [{ visibility: "off" }] },
+    { featureType: "poi.park", stylers: [{ visibility: "on" }] },
+    { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#e2ecd9" }] },
+    { featureType: "poi.park", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "road", elementType: "geometry.fill", stylers: [{ color: "#ffffff" }] },
+    { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#e6e3dc" }] },
+    { featureType: "road", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "road.highway", elementType: "geometry.fill", stylers: [{ color: "#fdfcf9" }] },
+    { featureType: "road.local", stylers: [{ visibility: "simplified" }] },
+    { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#d9d5cd" }, { weight: 0.8 }] },
+    { featureType: "transit.line", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "transit.station", stylers: [{ visibility: "off" }] },
+    { featureType: "transit.station.airport", stylers: [{ visibility: "on" }] },
+    { featureType: "transit.station.airport", elementType: "geometry", stylers: [{ color: "#ebe8e2" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#cddff0" }] },
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#7c9bb8" }] },
+  ],
+  dark: [
+    { elementType: "geometry", stylers: [{ color: "#1d1e20" }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+    { elementType: "labels.text.fill", stylers: [{ color: "#8f8e8b" }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: "#1d1e20" }, { weight: 3 }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+    { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#c9c7c2" }] },
+    { featureType: "poi", stylers: [{ visibility: "off" }] },
+    { featureType: "poi.park", stylers: [{ visibility: "on" }] },
+    { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#1f2a20" }] },
+    { featureType: "poi.park", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "road", elementType: "geometry.fill", stylers: [{ color: "#2d2e31" }] },
+    { featureType: "road", elementType: "geometry.stroke", stylers: [{ visibility: "off" }] },
+    { featureType: "road", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#34353a" }, { weight: 0.8 }] },
+    { featureType: "transit.line", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "transit.station", stylers: [{ visibility: "off" }] },
+    { featureType: "transit.station.airport", stylers: [{ visibility: "on" }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: "#13243a" }] },
+    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#4d6a88" }] },
+  ],
+};
+/* HTML markers drawn by the page. Google's Advanced Markers need a Cloud Map ID, which
+   ignores JSON styles; this keeps the minimal style. The content is centred on the point. */
+let HtmlMarker = null;
+function makeMarker({ position, content, zIndex = 0 }) {
+  HtmlMarker ||= class extends google.maps.OverlayView {
+    constructor(position, content, zIndex) {
+      super();
+      this.pos = new google.maps.LatLng(position);
+      this.box = document.createElement("div");
+      this.box.className = "map-mk";
+      this.box.style.zIndex = zIndex;
+      this.box.appendChild(content);
+      google.maps.OverlayView.preventMapHitsAndGesturesFrom(this.box);
+    }
+    onAdd() { this.getPanes().overlayMouseTarget.appendChild(this.box); }
+    draw() {
+      const p = this.getProjection()?.fromLatLngToDivPixel(this.pos);
+      if (p) { this.box.style.left = p.x + "px"; this.box.style.top = p.y + "px"; }
+    }
+    onRemove() { this.box.remove(); }
+  };
+  const m = new HtmlMarker(position, content, zIndex);
+  m.setMap(map);
+  return m;
+}
 
 async function initMap() {
   if (map || mapLoading) return;
@@ -981,10 +1079,9 @@ async function initMap() {
   try {
     await TripGoogle.loadMaps();
     const { Map } = await google.maps.importLibrary("maps");
-    await google.maps.importLibrary("marker");
     const start = STOP_LIST[0] ? P[STOP_LIST[0].id] : null;
     map = new Map($("#map"), {
-      mapId: TripGoogle.mapId(), colorScheme: dark() ? "DARK" : "LIGHT",
+      styles: dark() ? MAP_STYLES.dark : MAP_STYLES.light, backgroundColor: dark() ? "#1d1e20" : "#f4f3ef",
       center: start ? { lat: start.lat, lng: start.lng } : { lat: 20, lng: 0 }, zoom: start ? 6 : 2,
       disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy", clickableIcons: false,
     });
@@ -1013,7 +1110,7 @@ function mountMap(sel) {
   slot.appendChild(mapEl);
   initMap();
 }
-function clearMarkers() { markers.forEach(m => { m.marker.map = null; }); markers = []; }
+function clearMarkers() { markers.forEach(m => m.marker.setMap(null)); markers = []; }
 function addPin(p, label, cls = "", onClick, markerOpts = {}) {
   const { prio = 50 } = markerOpts;
   const el = document.createElement("button");
@@ -1023,7 +1120,7 @@ function addPin(p, label, cls = "", onClick, markerOpts = {}) {
   el.setAttribute("aria-label", p.name);
   el.onclick = e => { e.stopPropagation(); onClick ? onClick() : showPop(el, p.id); };
   if (finePointer && !onClick) { el.onmouseenter = () => { clearTimeout(popTimer); popTimer = setTimeout(() => showPop(el, p.id), 200); }; el.onmouseleave = () => { clearTimeout(popTimer); popHide = setTimeout(hidePop, 250); }; }
-  const marker = new google.maps.marker.AdvancedMarkerElement({ map, position: { lat: p.lat, lng: p.lng }, content: el, zIndex: 1000 - prio });
+  const marker = makeMarker({ position: { lat: p.lat, lng: p.lng }, content: el, zIndex: 1000 - prio });
   markers.push({ marker, el });
 }
 
@@ -1183,28 +1280,32 @@ async function buildTripRoute() {
 }
 
 function setRouteData(features) {
-  routeOverlays.forEach(o => { if (o.setMap) o.setMap(null); else o.map = null; });
+  routeOverlays.forEach(o => o.setMap(null));
   routeOverlays = [];
   if (map) {
-    const casing = dark() ? "#191919" : "#ffffff";
+    const casing = dark() ? "#1d1e20" : "#ffffff";
     for (const f of features) {
       const path = f.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
       const st = ROUTE_STYLE[f.properties.kind] || ROUTE_STYLE.rail;
       const color = f.properties.approx ? (dark() ? "#ced4da" : "#495057") : st.color;
       const dash = f.properties.approx ? "dash" : st.dash;
-      routeOverlays.push(new google.maps.Polyline({ map, path, clickable: false, zIndex: 1, strokeColor: casing, strokeOpacity: .9, strokeWeight: st.width + 4 }));
+      const geodesic = f.properties.kind === "flight";
+      if (!dash) routeOverlays.push(new google.maps.Polyline({ map, path, geodesic, clickable: false, zIndex: 1, strokeColor: casing, strokeOpacity: 1, strokeWeight: st.width + 5 }));
       const symbol = dash === "dot"
         ? { path: google.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 1, strokeOpacity: 0, scale: st.width / 1.7 }
-        : { path: "M 0,-1 0,1", strokeColor: color, strokeOpacity: 1, strokeWeight: st.width, scale: 2.5 };
+        : { path: "M 0,-1 0,1", strokeColor: color, strokeOpacity: 1, strokeWeight: st.width, scale: 3 };
+      // Small white arrows along solid legs show the direction of travel.
+      const arrow = { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, fillColor: "#fff", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 1, scale: 1.6 };
       routeOverlays.push(new google.maps.Polyline({
-        map, path, clickable: false, zIndex: 2, strokeColor: color, strokeWeight: st.width, strokeOpacity: dash ? 0 : .95,
-        icons: dash ? [{ icon: symbol, offset: "0", repeat: dash === "dot" ? "9px" : "14px" }] : [],
+        map, path, geodesic, clickable: false, zIndex: 2, strokeColor: color, strokeWeight: st.width, strokeOpacity: dash ? 0 : 1,
+        icons: dash ? [{ icon: symbol, offset: "0", repeat: dash === "dot" ? "10px" : "16px" }] : st.arrows ? [{ icon: arrow, offset: "60px", repeat: "140px" }] : [],
       }));
       // A mode badge in the middle of each leg that is long enough to read.
       if (f.properties.distance > 400 || f.properties.kind === "flight") {
-        const img = document.createElement("img");
-        img.src = `icons/${f.properties.kind}.png`; img.alt = ""; img.className = "route-badge";
-        routeOverlays.push(new google.maps.marker.AdvancedMarkerElement({ map, position: path[Math.floor(path.length / 2)], content: img, zIndex: 3 }));
+        const badge = document.createElement("span");
+        badge.className = "route-badge";
+        badge.innerHTML = `<img src="icons/${f.properties.kind}.png" alt="">`;
+        routeOverlays.push(makeMarker({ position: path[Math.floor(path.length / 2)], content: badge, zIndex: 3 }));
       }
     }
   }

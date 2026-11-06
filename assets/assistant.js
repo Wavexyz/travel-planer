@@ -8,7 +8,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = UI.esc;
 
-const API = "https://api.deepseek.com/chat/completions";
+const API = "/api/llm";
 const K_CHAT = "trip-chat:" + D.id;
 const msgsEl = $("#msgs");
 const askEl = $("#ask");
@@ -591,7 +591,7 @@ function friendlyError(err) {
   if (err?.status === 400) return "DeepSeek could not answer that request." + (err.message ? " " + err.message : "");
   if (err?.status === 429) return "DeepSeek is rate-limiting requests. Wait a moment and try again.";
   if (err?.status >= 500) return "DeepSeek is having a problem right now. Try again in a minute.";
-  if (err instanceof TypeError) return "Could not reach api.deepseek.com. Check your connection and try again.";
+  if (err instanceof TypeError) return "Could not reach the planning service. Check your connection and try again.";
   return err?.message || "Something went wrong reaching DeepSeek. Try again.";
 }
 async function readError(res) {
@@ -637,10 +637,11 @@ async function send() {
       { role: "system", content: systemPrompt() },
       ...chatLog.slice(-12).map(m => ({ role: m.role, content: m.role === "assistant" ? cleanForRender(m.content) : m.content })),
     ];
+    // Through the site's backend: it adds the key and the Japan skill for this traveller.
     const res = await fetch(API, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-      body: JSON.stringify({ model, messages: context, stream: true, ...(model === "deepseek-v4-pro" ? { max_tokens: 6000 } : { thinking: { type: "disabled" }, temperature: 0.4, max_tokens: 1600 }) }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: context, stream: true, skill: TripAPI.skillScope(D.answers || {}), ...(model === "deepseek-v4-pro" ? { max_tokens: 6000 } : { temperature: 0.4, max_tokens: 1600 }) }),
       signal: controller.signal,
     });
     if (!res.ok) throw await readError(res);

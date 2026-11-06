@@ -1,7 +1,7 @@
 # Travel planner
 
-An open-source trip planner that runs in the browser. You answer a few questions, an AI builds a
-day-by-day itinerary, and the same plan shows up in three views — **Itinerary**, **Calendar** and
+A trip planner for **Japan** (more countries later). You answer a few questions, it helps you pick
+flights and hotels, then an AI builds a day-by-day itinerary from a curated Japan skill, and the same plan shows up in three views — **Itinerary**, **Calendar** and
 **Map** — with live photos, ratings and real travel routes. A trip assistant can then propose
 changes that you approve before they are applied.
 
@@ -9,49 +9,81 @@ A sample trip (*Japan in Autumn*, 18 days) is included and can be opened from th
 
 ## Start it
 
-You need **Node.js 18 or newer** — nothing else, no install step.
+You need **Node.js 18 or newer**.
 
 ```bash
-npm start
+npm install
+npm start          # the site and its backend (Cloudflare Worker) at http://localhost:4173
 ```
 
-The site opens at <http://127.0.0.1:4173>. `npm start -- --no-open` starts without opening a
-browser; `PORT=8080 npm start` uses another port.
+`npm start` runs `wrangler dev`, which serves the static site and the `/api` backend together and
+reads the keys from `.dev.vars` (see below). `npm run start:static` still serves the files alone,
+but without the backend nothing can be generated.
 
 ## Keys
 
-Open **Keys & settings** (the gear in the top bar, or on the start screen). Both keys are stored in
-this browser's `localStorage` and sent only to their own service.
+Keys live on the server, never in the browser. Locally they are in **`.dev.vars`** (gitignored and
+never published, see `.assetsignore`); in production they are Worker secrets.
 
-| Key | Used for | Where to get it |
-|---|---|---|
-| **DeepSeek** | Generating itineraries and the trip assistant | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
-| **Google Maps Platform** | Map, place search, photos, ratings, reviews, routes | [Google Cloud console](https://console.cloud.google.com/google/maps-apis/credentials) |
+| Secret | Used for |
+|---|---|
+| `DEEPSEEK_API_KEY` | Route, itinerary, hotel ranking and the trip assistant ([platform.deepseek.com](https://platform.deepseek.com/api_keys)) |
+| `GOOGLE_MAPS_KEY` | Map, place search, photos, ratings, routes. Sent to the browser (the Maps JavaScript API runs there), so restrict it by HTTP referrer to your domain |
+| `TREG_TOKEN`, `TREG_ORG` | Google Flights and Google Hotels data (SerpApi) through [treg](https://treg.to) |
 
-For the Google key, enable these three APIs on the project:
+```
+DEEPSEEK_API_KEY=sk-…
+GOOGLE_MAPS_KEY=AIza…
+TREG_TOKEN=…
+TREG_ORG=…
+```
 
-- **Maps JavaScript API** — the map
-- **Places API (New)** — finding each place, its photos, rating and reviews
-- **Routes API** — walking, driving and public-transport routes and times
-
-Then restrict the key to your site's address (HTTP referrers, e.g. `http://127.0.0.1:4173/*` and
-your production domain), because it is used from the browser. The **Map ID** is optional; without
-one the app uses Google's `DEMO_MAP_ID`. For a custom map style, create a Map ID in the console.
+For the Google key, enable the Maps JavaScript API, Places API (New) and Routes API.
 
 ## How a trip is generated
 
-1. **Questions** — destination, dates, arrival/departure, who is travelling, interests, pace,
-   walking, transport, accommodation, budget, diet, must-dos and things to avoid.
-2. **Outline** (DeepSeek) — route, hotels, a title and purpose for each day, and the day's
-   highlights.
-3. **Days** (DeepSeek, three days per call, in parallel) — timed items, meals, travel modes,
-   rain plans, alternatives and watch-outs.
-4. **Places** (Google Places) — every place is matched to a Google place id and coordinates,
-   biased to its city. That match is what keeps the itinerary, calendar and map in step.
+The planner is built around the **Japan country skill** (`skills/japan.md`). The Worker sends its
+core rules on every call and adds only the catalog experiences that match the traveller's interests
+(tested against the full file: same quality, about 43% fewer tokens).
 
-The planning instructions live in **`skills/itinerary.md`**. It is a placeholder: replace it with
-your own itinerary-generation skill. The app sends it as the planner's instructions and adds the
-JSON format it needs itself (`assets/generator.js`), so the skill only has to describe how to plan.
+1. **Questions** — dates, who's going, interests (the skill's categories), pace and crowds, food and
+   diet, onsen and tattoos, budget, and what's already booked.
+2. **Route** — the skill proposes cities, nights, neighbourhoods and airports; the traveller adjusts.
+3. **Flights** — booked: looked up by flight number on Google Flights. Booking them later: the
+   traveller says when they land and leave (never assumed). Not booked: 3 options
+   (best overall, cheapest, fastest) with real return legs and totals, linked to Google Flights.
+4. **Hotels** — priorities (central, near a station, clean, quiet…), beds, a max per room per night
+   and a free-text comment, then 3 hotels per stop. Each search keeps hotels within ~2.5 km of the
+   stop's neighbourhood (never airport hotels), fetches details for the strongest 6 (every booking
+   site's live price, room types with their own photos), drops hotels with no availability, and
+   reads the 10 latest Google reviews of the best 4. DeepSeek ranks them with the skill's hotel rules
+   and the reviews; each card shows why, a verified guest quote, caveats and the cheapest site.
+5. **Itinerary** — outline and days (DeepSeek, built around the fixed flights and hotels), then every
+   place matched on Google Places. Each item lists **why it is there**: a curated catalog entry
+   (solid badge) and/or a source the planner cites, such as Tabelog or Japan-Guide (outlined badge,
+   not checked live).
+6. **Assistant** — opens with what the plan is and why it looks the way it does, and proposes
+   changes you approve.
+
+**Booking sites.** Hotel prices and links come only from trusted booking sites plus the hotel's
+own website (default: Booking.com, Expedia, Hotels.com, Agoda, Trip.com, Rakuten Travel, Ikyu,
+JAPANiCAN, Relux). Price-comparison sites that redirect elsewhere are left out. Set the
+`BOOKING_SITES` secret (comma-separated, names as Google lists them) to change the list.
+
+**Photos.** Only photos from the hotel or booking sites are shown, never guests' uploads.
+
+**Map.** A minimal base style is applied in code (no Cloud Map ID needed), with page-drawn markers,
+cased route lines per mode, direction arrows and mode badges.
+
+### Data sources (tested 2026-11-06, LHR→Tokyo and Shinjuku/Kyoto hotels)
+
+- **Google Flights via SerpApi (treg)** — chosen. Same fares as `fli` (both read Google Flights) and
+  wider airline coverage than Tourmind; works from a Worker. ~$0.09 per search.
+- **Google Hotels via SerpApi (treg)** — chosen. Photos, ratings, review aspects (e.g. "Sleep") and
+  ~15 booking sites' live prices per hotel with links (Expedia, Booking.com, Agoda, Ikyu, Rakuten…),
+  room photos and recent reviews. ~$0.17 per stop.
+- Tourmind (similar prices, no public booking link, no guest reviews), LetsFG (no hotel photos,
+  markup in price), DataForSEO (no photos) and the Airbnb MCP (homes, scraping) were not used.
 
 ## What is stored where
 
@@ -108,7 +140,11 @@ assets/app.js         itinerary, calendar, map, place panels, slot selection
 assets/assistant.js   DeepSeek chat, slot planner, plan and change cards
 assets/generator.js   questionnaire answers → trip (DeepSeek + Google Places)
 assets/onboarding.js  start screen, questionnaire, generation progress, Trips menu
-skills/itinerary.md   the itinerary-generation skill (replace with your own)
+skills/japan.md       the Japan country skill (rules + 300 curated experiences)
+skills/itinerary.md   general planning instructions sent with the skill
+assets/api.js         calls to the site's backend; which parts of the skill a traveller needs
+assets/booking.js     route, flights and hotels between the questions and the itinerary
+worker/               Cloudflare Worker: /api/llm, /api/flights, /api/hotels, Access check
 samples/              the Japan in Autumn sample trip
 icons/                walk, train, bus, taxi and flight route badges
 server.mjs            zero-dependency static server
@@ -130,11 +166,19 @@ A trip is one JSON object (see `samples/japan-in-autumn.json`):
 
 Place mentions in markdown use `{{place-id}}`; the page turns them into chips.
 
-## Deploying
+## Deploying (Cloudflare)
 
-The site is plain static files; `server.mjs` is only a local convenience. Upload the folder to
-Netlify, Vercel, Cloudflare Pages or GitHub Pages and add the domain to the Google key's
-referrer restrictions.
+```bash
+npx wrangler login
+npx wrangler secret put DEEPSEEK_API_KEY     # and GOOGLE_MAPS_KEY, TREG_TOKEN, TREG_ORG
+npm run deploy
+```
+
+Then protect it with **Cloudflare Access** (Zero Trust → Access → Applications → Self-hosted) on the
+custom domain and the `workers.dev` URL, allowing only your emails. Put the team domain
+(`yourteam.cloudflareaccess.com`) and the application's AUD tag in `wrangler.jsonc`
+(`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`) and deploy again: the Worker then verifies the Access token on
+every request. Without them it only answers on localhost, so a deploy can't expose the keys.
 
 ## Credits
 

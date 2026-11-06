@@ -1,0 +1,21 @@
+{
+  // One Worker serves the static site and the /api backend.
+  // Secrets (never in this file): DEEPSEEK_API_KEY, GOOGLE_MAPS_KEY, TREG_TOKEN, TREG_ORG.
+  // Locally they live in .dev.vars; in production: `npx wrangler secret put NAME`.
+  "name": "travel-planer",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": ".",
+    "binding": "ASSETS",
+    // The worker runs first for the API and for the page (it injects the public config).
+    "run_worker_first": ["/api/*", "/", "/index.html"]
+  },
+  "vars": {
+    // Cloudflare Access: set both to require a valid Access login on every API call.
+    // ACCESS_TEAM_DOMAIN looks like "yourteam.cloudflareaccess.com"; ACCESS_AUD is the
+    // application's Audience (AUD) tag. Leave empty only for local development.
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  }
+}
