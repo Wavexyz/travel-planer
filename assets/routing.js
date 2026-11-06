@@ -1,24 +1,27 @@
 "use strict";
-/* Real travel paths and times.
-   - Walking and driving: OSRM (routing.openstreetmap.de), GeoJSON geometry.
-   - Trains, buses, subways, ferries: Transitous (MOTIS), which returns the
-     actual legs of a journey, including the walk to/from the station.
-   Everything is cached in localStorage so re-opening a day is instant and
-   works offline after the first successful lookup. If a request fails we
+/* Real travel paths and times from the Google Routes API.
+   - Walking and driving: one route with its road geometry.
+   - Trains, buses, subways, ferries: the transit legs of the journey,
+     including the walks to and from the stops.
+   Results are cached for this browser session only. If a request fails we
    return an estimate plus a straight line, flagged as approximate.
 */
 (() => {
-const OSRM = {
-  walk: "https://routing.openstreetmap.de/routed-foot/route/v1/foot",
-  car: "https://routing.openstreetmap.de/routed-car/route/v1/driving",
-};
-const TRANSIT = "https://api.transitous.org/api/v1/plan";
-const CACHE_KEY = "trip-route-cache-v4";
-const MAX_CACHE = 140;
+const ROUTES = "https://routes.googleapis.com/directions/v2:computeRoutes";
+const CACHE_KEY = "trip-route-session-v1";
+const MAX_CACHE = 300;
+const FIELDS = [
+  "routes.duration", "routes.distanceMeters", "routes.polyline.encodedPolyline",
+  "routes.legs.steps.travelMode", "routes.legs.steps.distanceMeters", "routes.legs.steps.staticDuration",
+  "routes.legs.steps.polyline.encodedPolyline",
+  "routes.legs.steps.transitDetails.transitLine.nameShort", "routes.legs.steps.transitDetails.transitLine.name",
+  "routes.legs.steps.transitDetails.transitLine.vehicle.type",
+  "routes.legs.steps.transitDetails.stopDetails.departureStop.name", "routes.legs.steps.transitDetails.stopDetails.arrivalStop.name",
+].join(",");
 const cache = new Map();
 
 try {
-  const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
+  const saved = JSON.parse(sessionStorage.getItem(CACHE_KEY) || "[]");
   if (Array.isArray(saved)) saved.forEach(([k, v]) => cache.set(k, v));
 } catch {}
 
@@ -28,7 +31,7 @@ function persist() {
   saveTimer = setTimeout(() => {
     try {
       while (cache.size > MAX_CACHE) cache.delete(cache.keys().next().value);
-      localStorage.setItem(CACHE_KEY, JSON.stringify([...cache]));
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify([...cache]));
     } catch {}
   }, 600);
 }
@@ -36,26 +39,6 @@ function cached(key) { return cache.get(key); }
 function remember(key, value) {
   cache.set(key, value); persist(); return value;
 }
-
-/* Transit routing needs a street/stop near the destination. Temples and castles
-   often have none, so when a direct transit query fails we snap to a nearby
-   station, route station-to-station and add real walking legs at both ends. */
-const STATIONS = [
-  { name: "Kintetsu Nara", lat: 34.6834, lng: 135.8273 },
-  { name: "JR Nara", lat: 34.6808, lng: 135.8185 },
-  { name: "Himeji", lat: 34.8274, lng: 134.6908 },
-  { name: "Horyuji", lat: 34.6014, lng: 135.7392 },
-  { name: "Kyoto", lat: 34.9858, lng: 135.7589 },
-  { name: "Kawaguchiko", lat: 35.4982, lng: 138.7688 },
-  { name: "Shinjuku", lat: 35.6896, lng: 139.7006 },
-  { name: "Ueno", lat: 35.7141, lng: 139.7774 },
-  { name: "Tokyo", lat: 35.6812, lng: 139.7671 },
-  { name: "Mishima", lat: 35.1260, lng: 138.9110 },
-  { name: "Nagoya", lat: 35.1709, lng: 136.8815 },
-  { name: "Osaka", lat: 34.7025, lng: 135.4959 },
-  { name: "Shin-Osaka", lat: 34.7330, lng: 135.5000 },
-  { name: "Odawara", lat: 35.2560, lng: 139.1550 },
-];
 
 const R = 6371000;
 function rad(d) { return d * Math.PI / 180; }
@@ -67,69 +50,28 @@ function haversine(a, b) {
 
 const SPEED = { walk: 78, car: 470, bus: 270, rail: 750, flight: 13300 };
 const WAIT = { walk: 0, car: 2, bus: 5, rail: 8, flight: 60 };
-function nearestStation(p) {
-  let best = null, bestD = Infinity;
-  for (const st of STATIONS) {
-    const d = haversine(p, st);
-    if (d < bestD) { bestD = d; best = st; }
-  }
-  return best && bestD <= 4000 ? { ...best, dist: bestD } : null;
-}
-function addMinutes(iso, mins) {
-  const d = new Date(iso);
-  if (isNaN(d)) return iso;
-  d.setMinutes(d.getMinutes() + Math.round(mins));
-  return d.toISOString();
-}
-function sumLegs(legs) {
-  return {
-    duration: legs.reduce((s, l) => s + (l.duration || 0), 0),
-    distance: legs.reduce((s, l) => s + (l.distance || 0), 0),
-  };
-}
 function estimate(kind, meters) {
   return Math.max(1, Math.round(meters / (SPEED[kind] || SPEED.walk) + (WAIT[kind] || 0)));
 }
 
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-/* Transitous is a shared community service: keep two requests in flight and
-   leave a small gap between them. Bursts get rejected without CORS headers. */
-let transitActive = 0;
-const transitQueue = [];
-function pumpTransit() {
-  while (transitActive < 2 && transitQueue.length) {
-    const job = transitQueue.shift();
-    transitActive++;
-    getJSON(job.url, 18000).then(job.resolve, job.reject).finally(() => {
-      transitActive--;
-      setTimeout(pumpTransit, 220);
-    });
-  }
-}
-function transitRequest(url) {
-  return new Promise((resolve, reject) => {
-    transitQueue.push({ url, resolve, reject });
-    pumpTransit();
-  });
-}
-
-async function getJSON(url, ms = 14000) {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), ms);
+/* A local wall-clock time in an IANA zone, as RFC 3339 with that zone's offset. */
+function zonedISO(date, time, tz) {
+  const t = /^\d{2}:\d{2}$/.test(String(time || "")) ? time : "09:00";
+  let off = "Z";
   try {
-    const res = await fetch(url, { signal: ctl.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    return await res.json();
-  } finally { clearTimeout(timer); }
+    const name = new Intl.DateTimeFormat("en-US", { timeZone: tz || undefined, timeZoneName: "longOffset" })
+      .formatToParts(new Date(`${date}T${t}:00Z`)).find(p => p.type === "timeZoneName")?.value || "";
+    const m = /GMT([+-]\d{2}):?(\d{2})?/.exec(name);
+    if (m) off = `${m[1]}:${m[2] || "00"}`;
+  } catch {}
+  return `${date}T${t}:00${off}`;
 }
 
-/* Standard encoded polyline (MOTIS uses precision 7). */
-function decodePolyline(str, precision = 7) {
+/* Standard encoded polyline (Google uses precision 5). */
+function decodePolyline(str, precision = 5) {
   let i = 0, lat = 0, lng = 0;
   const out = [], factor = 10 ** precision;
-  // Use Number arithmetic, not 32-bit bitwise ops: lat/lng scaled by 1e7
-  // overflow signed 32-bit integers (e.g. Tokyo's longitude).
+  // Number arithmetic, not 32-bit bitwise ops, so high-precision values cannot overflow.
   while (i < str.length) {
     let result = 0, shift = 0, b;
     do { b = str.charCodeAt(i++) - 63; result += (b & 0x1f) * (2 ** shift); shift += 5; } while (b >= 0x20);
@@ -142,23 +84,16 @@ function decodePolyline(str, precision = 7) {
   return out;
 }
 
-function classify(mode) {
-  const m = String(mode || "").toUpperCase();
-  if (m === "WALK" || m === "BIKE") return "walk";
-  if (m === "BUS" || m === "COACH") return "bus";
-  if (m === "CAR" || m === "TAXI") return "car";
-  if (m === "FLIGHT") return "flight";
+function classify(step) {
+  if (step.travelMode === "WALK") return "walk";
+  if (step.travelMode === "DRIVE") return "car";
+  const v = String(step.transitDetails?.transitLine?.vehicle?.type || "").toUpperCase();
+  if (/BUS|TROLLEYBUS|SHARE_TAXI/.test(v)) return "bus";
   return "rail";
 }
+const seconds = d => parseFloat(String(d || "0").replace("s", "")) || 0;
 
 function straight(a, b) { return [[a.lng, a.lat], [b.lng, b.lat]]; }
-function lineLength(coords) {
-  let m = 0;
-  for (let i = 1; i < coords.length; i++) {
-    m += haversine({ lat: coords[i - 1][1], lng: coords[i - 1][0] }, { lat: coords[i][1], lng: coords[i][0] });
-  }
-  return m;
-}
 function greatCircle(a, b, n = 32) {
   const toVec = p => [Math.cos(rad(p.lat)) * Math.cos(rad(p.lng)), Math.cos(rad(p.lat)) * Math.sin(rad(p.lng)), Math.sin(rad(p.lat))];
   const A = toVec(a), B = toVec(b);
@@ -177,86 +112,67 @@ function greatCircle(a, b, n = 32) {
 
 function fallback(kind, from, to, reason) {
   const meters = haversine(from, to);
-  const mins = estimate(kind === "taxi" ? "car" : kind, meters);
+  const mins = estimate(kind, meters);
   return {
-    legs: [{ kind: kind === "taxi" ? "car" : kind, coordinates: kind === "flight" ? greatCircle(from, to) : straight(from, to), duration: mins, distance: meters, approximate: true }],
+    legs: [{ kind, coordinates: kind === "flight" ? greatCircle(from, to) : straight(from, to), duration: mins, distance: meters, approximate: true }],
     duration: mins, distance: meters, approximate: true, source: "fallback", reason,
   };
 }
 
-async function osrm(kind, from, to) {
-  const base = kind === "car" ? OSRM.car : OSRM.walk;
-  const url = `${base}/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson&steps=false`;
-  const j = await getJSON(url);
-  if (j.code !== "Ok" || !j.routes?.[0]) throw new Error(j.code || "no route");
-  const r = j.routes[0];
-  return {
-    legs: [{ kind: kind === "car" ? "car" : "walk", coordinates: r.geometry.coordinates, duration: r.duration / 60, distance: r.distance, mode: kind }],
-    duration: r.duration / 60, distance: r.distance, approximate: false, source: "osrm",
+async function computeRoute(kind, from, to, departISO) {
+  const key = window.TripGoogle?.key();
+  if (!key) throw new Error("no key");
+  const mode = kind === "walk" ? "WALK" : kind === "car" ? "DRIVE" : "TRANSIT";
+  const body = {
+    origin: { location: { latLng: { latitude: from.lat, longitude: from.lng } } },
+    destination: { location: { latLng: { latitude: to.lat, longitude: to.lng } } },
+    travelMode: mode,
   };
-}
-
-async function transitDirect(from, to, departISO) {
-  const url = `${TRANSIT}?fromPlace=${from.lat},${from.lng}&toPlace=${to.lat},${to.lng}&time=${encodeURIComponent(departISO)}`;
-  let last;
-  let j;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try { j = await transitRequest(url); break; }
-    catch (e) { last = e; if (attempt === 0) await sleep(700); }
+  if (mode === "TRANSIT") {
+    // Transit can look up to 7 days back; anything older uses the current timetable.
+    if (departISO && new Date(departISO) > Date.now() - 6 * 864e5) body.departureTime = new Date(departISO).toISOString();
+    if (kind === "bus") body.transitPreferences = { allowedTravelModes: ["BUS"] };
   }
-  if (!j) throw last || new Error("transit unavailable");
-  const it = j.itineraries?.[0];
-  if (!it) throw new Error("no itinerary");
+  const res = await fetch(ROUTES, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Goog-Api-Key": key, "X-Goog-FieldMask": FIELDS },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = "";
+    try { msg = (await res.json())?.error?.message || ""; } catch {}
+    if ([401, 403, 429].includes(res.status)) window.TripGoogle?.reportError("Routes API", msg || "HTTP " + res.status);
+    throw new Error(msg || "HTTP " + res.status);
+  }
+  const j = await res.json();
+  const r = j.routes?.[0];
+  if (!r) throw new Error("no route");
   const legs = [];
-  for (const leg of it.legs || []) {
-    const pg = leg.legGeometry;
-    if (!pg?.points) continue;
-    let coords = decodePolyline(pg.points, pg.precision ?? 7);
-    if (coords.length < 2) continue;
-    // Guard against an unexpected lat/lon order by checking the endpoints.
-    if (haversine({ lat: coords[0][1], lng: coords[0][0] }, { lat: from.lat, lng: from.lng }) > 5000 &&
-        haversine({ lat: coords[0][0], lng: coords[0][1] }, { lat: from.lat, lng: from.lng }) < 5000) {
-      coords = coords.map(([x, y]) => [y, x]);
+  for (const step of (r.legs || []).flatMap(l => l.steps || [])) {
+    const pts = step.polyline?.encodedPolyline ? decodePolyline(step.polyline.encodedPolyline) : [];
+    if (pts.length < 2) continue;
+    const k = mode === "TRANSIT" ? classify(step) : kind;
+    const td = step.transitDetails;
+    const prev = legs[legs.length - 1];
+    // Merge runs of walking or driving steps into one leg; keep each transit ride separate.
+    if (prev && prev.kind === k && !td && !prev.line) {
+      prev.coordinates.push(...pts.slice(1));
+      prev.duration += seconds(step.staticDuration) / 60;
+      prev.distance += step.distanceMeters || 0;
+      continue;
     }
     legs.push({
-      kind: classify(leg.mode),
-      coordinates: coords,
-      duration: (leg.duration || 0) / 60,
-      distance: leg.distance || lineLength(coords),
-      mode: leg.mode,
-      line: leg.routeShortName || leg.tripShortName || leg.routeLongName || "",
-      from: leg.from?.name || "",
-      to: leg.to?.name || "",
+      kind: k, coordinates: pts,
+      duration: seconds(step.staticDuration) / 60, distance: step.distanceMeters || 0,
+      line: td?.transitLine?.nameShort || td?.transitLine?.name || "",
+      from: td?.stopDetails?.departureStop?.name || "", to: td?.stopDetails?.arrivalStop?.name || "",
     });
   }
-  if (!legs.length) throw new Error("empty itinerary");
-  return {
-    legs,
-    duration: (it.duration || legs.reduce((s, l) => s + l.duration, 0)) / 60,
-    distance: legs.reduce((s, l) => s + l.distance, 0),
-    approximate: false, source: "transitous",
-    startTime: it.startTime, endTime: it.endTime, transfers: it.transfers,
-  };
-}
-
-async function transit(from, to, departISO) {
-  try {
-    return await transitDirect(from, to, departISO);
-  } catch (err) {
-    const a = nearestStation(from), b = nearestStation(to);
-    if (!a || !b || a.name === b.name) throw err;
-    try {
-      const walkA = a.dist > 120 ? await osrm("walk", from, a) : null;
-      const dep = addMinutes(departISO, walkA ? walkA.duration : 0);
-      const mid = await transitDirect(a, b, dep);
-      const walkB = b.dist > 120 ? await osrm("walk", b, to) : null;
-      const legs = [...(walkA?.legs || []), ...mid.legs, ...(walkB?.legs || [])];
-      const sum = sumLegs(legs);
-      return { legs, duration: sum.duration, distance: sum.distance, approximate: false, source: "transitous+walk" };
-    } catch {
-      throw err;
-    }
+  if (!legs.length && r.polyline?.encodedPolyline) {
+    legs.push({ kind, coordinates: decodePolyline(r.polyline.encodedPolyline), duration: seconds(r.duration) / 60, distance: r.distanceMeters || 0 });
   }
+  if (!legs.length) throw new Error("empty route");
+  return { legs, duration: seconds(r.duration) / 60, distance: r.distanceMeters || 0, approximate: false, source: "google" };
 }
 
 /**
@@ -276,23 +192,18 @@ async function routeLeg({ kind, from, to, departISO }) {
   const hit = cached(key);
   if (hit) return hit;
   try {
-    let out;
-    if (kind === "walk" || kind === "car") out = await osrm(kind, from, to);
-    else out = await transit(from, to, departISO || new Date().toISOString());
-    return remember(key, out);
+    return remember(key, await computeRoute(kind, from, to, departISO));
   } catch (err) {
-    // A bus still runs on roads. If the timetable service cannot route it,
-    // use the road route so the map shows a real path rather than a straight line.
+    // Where there is no transit data, a bus still runs on roads: show the road route.
     if (kind === "bus") {
       try {
-        const r = await osrm("car", from, to);
-        r.legs.forEach(l => { l.kind = "bus"; l.mode = "BUS"; });
-        r.source = "osrm-road";
-        r.approximate = false;
+        const r = await computeRoute("car", from, to);
+        r.legs.forEach(l => { l.kind = "bus"; });
+        r.source = "google-road";
         return remember(key, r);
       } catch {}
     }
-    // Don't cache failures: the next attempt may succeed when the service recovers.
+    // Don't cache failures: the next attempt may succeed.
     return fallback(kind, from, to, err?.message || "unavailable");
   }
 }
@@ -307,7 +218,7 @@ async function travel(kind, from, to, departISO) {
 }
 
 window.TripRouting = {
-  routeLeg, travel, haversine, estimate, classify, decodePolyline,
+  routeLeg, travel, haversine, estimate, decodePolyline, zonedISO,
   isOnline: () => navigator.onLine !== false,
 };
 })();

@@ -1,181 +1,142 @@
-# Japan in Autumn
+# Travel planner
 
-A private, self-contained trip site for **10–27 November 2026**: an 18-day plan through Tokyo,
-Kawaguchiko, Kyoto, Nara, Himeji and Shanghai. The itinerary, calendar, map, photo panels and
-trip assistant all run in the browser.
+An open-source trip planner that runs in the browser. You answer a few questions, an AI builds a
+day-by-day itinerary, and the same plan shows up in three views — **Itinerary**, **Calendar** and
+**Map** — with live photos, ratings and real travel routes. A trip assistant can then propose
+changes that you approve before they are applied.
 
-![The itinerary](docs/screenshot.png)
-
-The calendar, map and place panels are at the same URL; the map uses local tiles and the
-assistant can plan a selected time slot:
-
-![The trip map](docs/map.png)
-
-![Planning a slot](docs/planner.png)
-
-In normal chat the assistant can also propose moves, edits and removals; the card is only a
-proposal until you press **Apply changes**:
-
-![Proposed plan changes](docs/changes.png)
-
-Day routes follow the real roads and rail lines, with a different colour and icon for each mode:
-
-![Routed day](docs/routes.png)
+A sample trip (*Japan in Autumn*, 18 days) is included and can be opened from the start screen.
 
 ## Start it
 
-You need **Node.js 18 or newer** — nothing else. There is no install step and no API key required
-to browse the trip.
+You need **Node.js 18 or newer** — nothing else, no install step.
 
 ```bash
-cd japan-in-autumn
 npm start
 ```
 
-The site opens at <http://127.0.0.1:4173>. Press `Ctrl+C` to stop it.
+The site opens at <http://127.0.0.1:4173>. `npm start -- --no-open` starts without opening a
+browser; `PORT=8080 npm start` uses another port.
 
-- `npm start -- --no-open` starts without opening a browser.
-- `PORT=8080 npm start` uses another port.
-- If 4173 is busy, the server tries the next free port and prints the URL.
+## Keys
 
-Open the site through this server, not by double-clicking `index.html`. The map is stored as
-PMTiles archives that need HTTP Range requests, and the browser needs an HTTP origin to load the
-local map fonts and photos.
+Open **Keys & settings** (the gear in the top bar, or on the start screen). Both keys are stored in
+this browser's `localStorage` and sent only to their own service.
 
-## The trip assistant
+| Key | Used for | Where to get it |
+|---|---|---|
+| **DeepSeek** | Generating itineraries and the trip assistant | [platform.deepseek.com](https://platform.deepseek.com/api_keys) |
+| **Google Maps Platform** | Map, place search, photos, ratings, reviews, routes | [Google Cloud console](https://console.cloud.google.com/google/maps-apis/credentials) |
 
-The assistant is powered by **DeepSeek** using a key you provide. It is not connected by default.
+For the Google key, enable these three APIs on the project:
 
-1. Click the gear next to **Trip assistant**, or the **add a DeepSeek key** link under the composer.
-2. Paste a key from [platform.deepseek.com](https://platform.deepseek.com/api_keys).
-3. Choose `deepseek-chat` (fast, cheap) or `deepseek-reasoner` (slower, more careful), then **Save key**.
+- **Maps JavaScript API** — the map
+- **Places API (New)** — finding each place, its photos, rating and reviews
+- **Routes API** — walking, driving and public-transport routes and times
 
-The key is stored in this browser's `localStorage` and is sent only to `api.deepseek.com` when you
-ask a question. There is no server-side secret and no analytics. **Remove key** deletes it.
+Then restrict the key to your site's address (HTTP referrers, e.g. `http://127.0.0.1:4173/*` and
+your production domain), because it is used from the browser. The **Map ID** is optional; without
+one the app uses Google's `DEMO_MAP_ID`. For a custom map style, create a Map ID in the console.
 
-### Plan a time from the calendar
+## How a trip is generated
 
-- Drag down a column (or click a time) to select a period. On a phone, tap a time.
-- **Plan a time** in the calendar toolbar opens the same planner with a day picker, if you would
-  rather type the day and times.
-- Type what you want — “eat somewhere local”, “walk in a park”, “coffee”, “something indoors” —
-  and the assistant receives the selected day, times, your previous and next stops, and a shortlist
-  of nearby places with walking/transit estimates.
-- Its answer comes with a **plan card** showing the place, times, rating and the **real route and
-  travel time** from where you will be. Nothing is added until you press **Add to Day N**.
-- If the selected period overlaps an existing activity, the planner says so before you ask.
+1. **Questions** — destination, dates, arrival/departure, who is travelling, interests, pace,
+   walking, transport, accommodation, budget, diet, must-dos and things to avoid.
+2. **Outline** (DeepSeek) — route, hotels, a title and purpose for each day, and the day's
+   highlights.
+3. **Days** (DeepSeek, three days per call, in parallel) — timed items, meals, travel modes,
+   rain plans, alternatives and watch-outs.
+4. **Places** (Google Places) — every place is matched to a Google place id and coordinates,
+   biased to its city. That match is what keeps the itinerary, calendar and map in step.
 
-### Change the plan in chat
+The planning instructions live in **`skills/itinerary.md`**. It is a placeholder: replace it with
+your own itinerary-generation skill. The app sends it as the planner's instructions and adds the
+JSON format it needs itself (`assets/generator.js`), so the skill only has to describe how to plan.
 
-Ask normally: “move the Ueno museum to the morning”, “drop Ameyoko”, “make Day 9 lunch later”,
-“add a garden walk on Day 4 at 17:00”. The assistant replies with a **Proposed changes** card
-listing every add, move, edit or remove with the old and new day/times. Nothing is applied until
-you press **Apply changes**; **Discard** leaves the plan untouched. The assistant is instructed
-never to claim a change is already done. After applying, the **Open Day** buttons jump to the
-changed day and **Show map** opens the map on that day.
+## What is stored where
 
-The live plan, including those edits, is stored as a snapshot in this browser under
-`trip-plan-v1` and appears everywhere: itinerary, calendar, map, assistant context and print.
-Clear that storage key to return to the original `data.js` plan.
+| Data | Where | How long |
+|---|---|---|
+| Trips (days, items, place names, kinds, coordinates, Google place ids) | `localStorage` (`trips-v1`, `trip:<id>`) | Until deleted |
+| Chat history | `localStorage` (`trip-chat:<id>`) | Until the trip is deleted |
+| Photos, ratings, addresses, reviews | `sessionStorage` (`google-places-session-v1`) | This browser session |
+| Routes and travel times | `sessionStorage` (`trip-route-session-v1`) | This browser session |
 
-Each question sends the trip plan, the current itinerary and the place catalogue to DeepSeek
-(roughly 20k input tokens). DeepSeek caches the repeated prefix, so follow-up questions are
-cheaper. The answers use the same place chips, photo previews and map/day actions as the rest of
-the page.
+Photos are never downloaded: the page points `<img>` tags at the Places photo endpoint and the
+browser loads them from Google. Place details are fetched only for rows that scroll into view.
+This also follows Google's terms, which allow storing place ids but not caching Places content,
+and require Places content to be shown on a Google map (which is why the map is Google Maps).
 
-Without a key, the page still works: the seeded plan conversation, all photos, the itinerary,
-calendar, map and place panels are available. Only live questions are disabled.
+## Cost
 
-## What is on the page
+Google Maps Platform bills per request, with a free monthly allowance per API. In this app:
 
-- **Itinerary** — all 18 days, with times, places, photos, ratings, “if it rains” alternatives,
-  budget notes and warnings. Click any place name or thumbnail for photos and details.
-- **Calendar** — one week at a time on desktop, one day at a time on phones. Overlapping events
-  are laid out in lanes; all-day items (hotels, flights) stay in a bar above the grid. Click a
-  block to open the place or jump to the day.
-- **Map** — local OpenStreetMap/Protomaps vector tiles plus **real route geometry**. Walking and
-  driving use OSRM; trains, buses, subways and ferries use Transitous and include the walk to and
-  from the station. Routes are drawn as coloured lines with a walking, train, bus, taxi or plane
-  icon along them, and a legend in the corner. The whole-trip view clusters nearby stops and lists
-  them above the map; day views number the stops in order. Click a stop in the list to fly there,
-  a numbered pin for the place, or a cluster to zoom in.
-- **Place panel** — photos, Google rating, address, a transit link from the previous stop, and
-  every day it appears in the plan.
-- **Print** — the Print button (or `Cmd/Ctrl+P`) prints the complete itinerary with all days
-  expanded, without the sidebar, map or photos.
-- **Deep links** — the URL keeps the view: `#day-9`, `#calendar`, `#map`, `#place-kiyomizu`.
-  Reloading or sharing the link restores it.
+- Generating a trip: one Places Text Search per place (typically 40–120 per trip).
+- Viewing a trip: one Place Details request per place shown and one Place Photo request per photo
+  shown, once per session. Opening a place panel adds a details request with reviews.
+- Map: one map load per page view; one Routes request per leg the first time a day is shown in a
+  session.
+
+DeepSeek: one outline call plus one call per three days for each generated trip, and one call
+per assistant question (roughly 20k input tokens for a long trip; repeated prefixes are cached).
+
+## Using the app
+
+- **Trips menu** (top left) — switch between saved trips, start a new one, add the sample, delete.
+- **Itinerary** — all days with times, places, ratings, plan B, budget notes and warnings. Click
+  any place for photos, reviews and the days it appears on.
+- **Calendar** — one week at a time (one day on phones). Drag across a free time, or use
+  **Plan a time**, to ask the assistant for something that fits, with the real travel time.
+- **Map** — whole trip (one pin per base, with the legs between them) or one day (numbered stops
+  with walking, transit, bus, taxi or flight routes).
+- **Assistant** — ask anything, or ask for changes (“move the museum to the morning”, “drop
+  lunch on Day 3”). It replies with a **Proposed changes** card; nothing changes until you press
+  **Apply changes**.
+- **Print** — the full itinerary, all days expanded.
+- **Deep links** — `#day-3`, `#calendar`, `#map`, `#place-<id>`.
 
 ## Files
 
 ```
-index.html            page shell and accessible markup
+index.html            page shell: trip page, questionnaire, dialogs
 assets/app.css        all styles, including dark mode and print
+assets/google.js      Google key, Maps JS loader, Places search/details/photos (session cache)
+assets/settings.js    the Keys & settings dialog
+assets/trips.js       saved trips in localStorage; picks the active trip
+assets/routing.js     Google Routes API: legs, geometry and times (session cache)
 assets/app.js         itinerary, calendar, map, place panels, slot selection
-assets/assistant.js   DeepSeek settings, streaming chat, slot planner, plan cards
-assets/routing.js     real routes and times via OSRM + Transitous, local cache
-assets/data.js        window.TRIP_DATA — all trip content
-assets/favicon.svg
+assets/assistant.js   DeepSeek chat, slot planner, plan and change cards
+assets/generator.js   questionnaire answers → trip (DeepSeek + Google Places)
+assets/onboarding.js  start screen, questionnaire, generation progress, Trips menu
+skills/itinerary.md   the itinerary-generation skill (replace with your own)
+samples/              the Japan in Autumn sample trip
 icons/                walk, train, bus, taxi and flight route badges
-img/                  653 photos, WebP (originals were 98 MB of JPEG; now ~54 MB)
-tiles/                14 PMTiles archives (≈73 MB) for the offline map
-fonts/, sprites/      map glyphs and sprite sheets
-vendor/               MapLibre GL, PMTiles and Protomaps basemaps (local, no CDN)
-server.mjs            zero-dependency static server with Range support
+server.mjs            zero-dependency static server
 ```
 
-## Editing the trip
+## Trip format
 
-Everything the page renders comes from `assets/data.js`:
+A trip is one JSON object (see `samples/japan-in-autumn.json`):
 
-- `meta` — title, version, dates, edited date, budget, route.
-- `days` — 18 day objects: `d`, `date`, `title`, `city`, `stay`, `purpose`, `items`, `planB`,
-  `alts`, `spend`, `watch`. Each item has `s`/`e` (start/end), `t` (title), optional `p` (place id),
-  `n` (note), `c` (kind), `k` (label such as “Sit-down”), `allDay`, `approx`.
-- `places` — 146 places keyed by id. Photos are paths under `img/`; `photoSizes` maps each image
-  to `[width, height]` so the browser can reserve space. If you add a photo outside the existing
-  set, its size is optional but recommended.
-- `plan` — the markdown used by the assistant.
-- `chat` — the seeded onboarding conversation.
-- `trip` — stops, route and day trips for the map.
-- `regions` — map regions and the zoom at which each loads.
+- `meta` — `title`, `emoji`, `version`, `start`, `end`, `days`, `nights`, `budget`, `budgetNote`,
+  `route`, `routeLine`, `timeZone`.
+- `profile` — the traveller's answers as text; the assistant reads it.
+- `places` — keyed by id: `name`, `kind` (`sight`, `nature`, `food`, `hotel`, `shop`,
+  `transport`, `city`), `city` (a city place id), `lat`, `lng`, `placeId` (Google).
+- `days` — `d`, `date`, `tz`, `title`, `city`, `stay`, `purpose`, `items`, `planB`, `alts`,
+  `spend`, `watch`. Each item has `s`/`e` (start/end), `t` (title), optional `p` (place id),
+  `n` (note), `c` (kind), `k` (label such as “Sit-down”), `mode` (how you get there), `allDay`.
+- `plan` — markdown summary for the assistant; `chat` — the opening conversation.
 
-Place mentions in the plan and chat use `{{place-id}}`; the page turns them into chips. This is
-also what the assistant is told to produce.
-
-The live plan is saved in `localStorage` under `trip-plan-v1`, including AI additions, moves,
-edits and removals. `data.js` remains the original source and is not rewritten. If you edit
-`data.js` after making changes in the app, clear `trip-plan-v1` (site data) to see the new source.
-
-## Routes and the network
-
-The map tiles work offline. Route geometry and travel times are fetched the first time a day is
-viewed (OSRM for walking/taxi, Transitous for transit) and cached in `localStorage`, so the same
-day opens instantly afterwards. Without a connection, an unrouted leg is drawn as a dashed
-straight line and the map says so. A routable bus leg falls back to the road geometry rather than a
-straight line.
-
-The public services are shared and rate-limited; the app queues transit requests and caches
-results. For a production trip used by many people, use your own OSRM/OpenTripPlanner instance or
-a keyed provider.
-
-Photos and ratings came from Google Maps in October 2026 and are used here for a private trip.
-Map data is © OpenStreetMap contributors (ODbL) and © Protomaps.
+Place mentions in markdown use `{{place-id}}`; the page turns them into chips.
 
 ## Deploying
 
 The site is plain static files; `server.mjs` is only a local convenience. Upload the folder to
-Netlify, Vercel, Cloudflare Pages or GitHub Pages. Those hosts support Range requests, so the
-map works. The assistant keeps using the browser-held key, so no server function is needed.
-
-If you deploy somewhere that does not support Range requests, the map still loads but downloads
-whole PMTiles archives instead of slices.
+Netlify, Vercel, Cloudflare Pages or GitHub Pages and add the domain to the Google key's
+referrer restrictions.
 
 ## Credits
 
-- [MapLibre GL JS](https://maplibre.org/) and [PMTiles](https://github.com/protomaps/PMTiles)
-- [Protomaps basemaps](https://protomaps.com/) and OpenStreetMap contributors
-- [OSRM](https://project-osrm.org/) and the OpenStreetMap DE routing service for walking/driving
-- [Transitous](https://transitous.org/) (MOTIS) for public-transport itineraries and stop data
-- Photos, ratings and review snippets: Google Maps, collected October 2026
-- Trip content and design: the original Japan in Autumn plan (V4, 27 Oct 2026)
+- [Google Maps Platform](https://developers.google.com/maps) — map, places, photos and routes
+- [DeepSeek](https://platform.deepseek.com/) — itinerary generation and the assistant

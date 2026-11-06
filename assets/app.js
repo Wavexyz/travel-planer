@@ -1,8 +1,9 @@
 "use strict";
-/* Japan in Autumn — page, itinerary, calendar, map, place panels. */
+/* Trip page — itinerary, calendar, map, place panels for the active trip. */
 (() => {
 const D = window.TRIP_DATA;
-const P = D.places, DAYS = D.days, META = D.meta, TRIP = D.trip;
+if (!D) return;
+const P = D.places, DAYS = D.days, META = D.meta;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -10,10 +11,6 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
-/* The live plan is saved in localStorage after any edit. data.js stays the
-   original source; clearing trip-plan-v1 restores it. */
-const PLAN_KEY = "trip-plan-v1";
-const LEGACY_ADD_KEY = "trip-additions";
 function sortDayItems(a, b) {
   if (a.allDay && !b.allDay) return -1;
   if (!a.allDay && b.allDay) return 1;
@@ -27,49 +24,9 @@ function assignSids() {
     });
   }
 }
-function alignAirportPlace(item) {
-  if (!item || !item.p) return false;
-  const text = `${item.t || ""} ${item.n || ""}`;
-  if (/haneda/i.test(text) && item.p === "narita" && P.haneda) {
-    item.p = "haneda"; item.c = P.haneda.kind; item.k = "";
-    return true;
-  }
-  if (/narita/i.test(text) && item.p === "haneda" && P.narita) {
-    item.p = "narita"; item.c = P.narita.kind; item.k = "";
-    return true;
-  }
-  return false;
-}
-// Older saved plans can contain a landing edited to Haneda while the place
-// (and the Narita transfer rows) were left behind. Make the day coherent.
-function repairAirportMismatch() {
-  const day = DAYS.find(d => d.d === 1);
-  if (!day) return false;
-  const landing = day.items.find(it => /haneda/i.test(`${it.t || ""} ${it.n || ""}`));
-  if (!landing) return false;
-  let changed = false;
-  if (landing.p !== "haneda" && P.haneda) {
-    landing.p = "haneda"; landing.c = P.haneda.kind; landing.k = "";
-    changed = true;
-  }
-  const clean = value => String(value || "").replace(/\bNarita\b/gi, "Haneda");
-  const t = clean(landing.t), n = clean(landing.n);
-  if (t !== landing.t || n !== landing.n) { landing.t = t; landing.n = n; changed = true; }
-  const transfer = day.items.find(it => it !== landing && (it.p === "keisei-ueno" || it.p === "narita" || /keisei|skyliner/i.test(`${it.t || ""} ${it.n || ""}`)));
-  if (transfer) {
-    transfer.p = "hotel-tokyo"; transfer.c = "transport"; transfer.k = "Train";
-    transfer.t = "Welcome Suica card, then Keikyu Airport Line + Toei Asakusa Line to Nihonbashi, then walk to the hotel";
-    transfer.n = "About 45–50 min door to door.";
-    transfer.s = "21:00"; transfer.e = "21:50"; transfer.approx = true;
-    changed = true;
-  }
-  const taxi = day.items.find(it => it !== landing && /taxi/i.test(it.t || "") && /ueno/i.test(`${it.t || ""} ${it.n || ""}`));
-  if (taxi) { day.items = day.items.filter(x => x !== taxi); changed = true; }
-  if (changed) day.items.sort(sortDayItems);
-  return changed;
-}
+/* The trip (including every edit) is saved with TripStore. */
 function savePlan() {
-  store.set(PLAN_KEY, { v: 1, savedAt: new Date().toISOString(), days: DAYS });
+  window.TripStore.save(D);
   markEdited();
 }
 function markEdited(when = new Date()) {
@@ -80,44 +37,13 @@ function markEdited(when = new Date()) {
   el.textContent = "Edited " + d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 function loadPlan() {
-  const saved = store.get(PLAN_KEY, null);
-  if (saved && Array.isArray(saved.days) && saved.days.length === DAYS.length) {
-    const byDay = new Map(saved.days.map(d => [d.d, d]));
-    const valid = DAYS.every(d => byDay.has(d.d) && Array.isArray(byDay.get(d.d).items));
-    if (valid) {
-      for (const day of DAYS) {
-        const items = byDay.get(day.d).items.filter(it => it && typeof it.t === "string");
-        day.items = items.map(it => {
-          const clean = { ...it };
-          if (clean.p && !P[clean.p]) delete clean.p;
-          return clean;
-        });
-        day.items.sort(sortDayItems);
-      }
-      assignSids();
-      if (repairAirportMismatch()) savePlan();
-      else if (saved.savedAt) markEdited(saved.savedAt);
-      return;
-    }
+  for (const day of DAYS) {
+    day.items = (day.items || []).filter(it => it && typeof it.t === "string");
+    day.items.forEach(it => { if (it.p && !P[it.p]) delete it.p; });
+    day.items.sort(sortDayItems);
   }
   assignSids();
-  // Migrate additions from the first version of the site.
-  const legacy = store.get(LEGACY_ADD_KEY, null);
-  if (legacy && typeof legacy === "object") {
-    for (const [dayNo, items] of Object.entries(legacy)) {
-      const day = DAYS.find(d => d.d === +dayNo);
-      if (!day || !Array.isArray(items)) continue;
-      for (const it of items) {
-        if (!it || !it.p || !P[it.p] || !normTime(it.s) || !normTime(it.e)) continue;
-        if (day.items.some(x => x.sid === it.uid || x.sid === it.sid)) continue;
-        day.items.push({ ...it, sid: it.uid || it.sid, added: true });
-      }
-      day.items.sort(sortDayItems);
-    }
-    assignSids();
-    savePlan();
-    try { localStorage.removeItem(LEGACY_ADD_KEY); } catch {}
-  }
+  markEdited(D.updatedAt || Date.now());
 }
 loadPlan();
 
@@ -128,9 +54,10 @@ const pageEl = $("#page");
 
 /* ---------- Dates & lookups ---------- */
 const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const WDJ = ["日", "月", "火", "水", "木", "金", "土"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const dateOf = iso => new Date(iso + "T12:00:00");
-const fmtDay = iso => { const d = dateOf(iso); return `${WD[d.getDay()]} ${d.getDate()} Nov`; };
+const fmtDay = iso => { const d = dateOf(iso); return `${WD[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`; };
+const fmtDayShort = iso => { const d = dateOf(iso); return `${WD[d.getDay()]} ${d.getDate()}`; };
 const toMin = t => { const [h, m] = String(t).split(":").map(Number); return h * 60 + m; };
 const KIND_LABEL = { sight: "Sight", nature: "Nature", food: "Food", hotel: "Stay", shop: "Shopping", transport: "Transport", city: "City" };
 const ICON = {
@@ -148,15 +75,80 @@ const ARROW = { l: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" s
 const fmtCount = n => n >= 10000 ? Math.round(n / 1000) + "k" : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n);
 const ratingHtml = p => p.rating ? `<span class="num"><span class="star">★</span> ${p.rating}${p.reviews ? ` (${fmtCount(p.reviews)})` : ""}</span>` : "";
 const kindTag = p => `<span class="tag k-${p.kind}">${KIND_LABEL[p.kind] || "Place"}</span>`;
-const gmapsUrl = p => p.placeId
+const gmapsUrl = p => p.url || (p.placeId
   ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.gname || p.name)}&query_place_id=${p.placeId}`
-  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`;
+  : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`);
 
-/* Images carry their true size so the browser reserves the right space. */
-function dimsOf(src) {
-  const f = String(src).split("/").pop();
-  const s = D.photoSizes[f.replace(/\.webp$/, ".jpg")];
-  return s ? { w: s[0], h: s[1] } : null;
+/* ---------- Live place details ----------
+   The trip stores a place's name, kind, coordinates and Google id. Photos,
+   rating, address and reviews come from Google for this session only. */
+function live(pid) {
+  const p = P[pid];
+  if (!p) return null;
+  const g = window.TripGoogle?.cachedDetails(p.placeId);
+  if (!g) return { ...p, photos: [], thumbs: [], credits: [] };
+  return {
+    ...p, gname: g.gname, address: g.address, rating: g.rating, reviews: g.reviews, types: g.types, url: g.url,
+    desc: g.desc || "", quotes: g.quotes || [],
+    photos: g.photos.map(ph => TripGoogle.photoUrl(ph, 1200)),
+    thumbs: g.photos.map(ph => TripGoogle.photoUrl(ph, 240)),
+    credits: g.photos.map(ph => ph.author),
+  };
+}
+function ensurePlace(pid, full = false) {
+  const p = P[pid];
+  if (!p || !window.TripGoogle?.hasKey()) return Promise.resolve(null);
+  return TripGoogle.details(p, { full }).then(g => {
+    // A place found by name keeps its Google id, so the next session goes straight to it.
+    if (g?.placeId && !p.placeId) { p.placeId = g.placeId; savePlan(); }
+    return g;
+  }).catch(() => null);
+}
+const thumbHtml = (pid, kind) => {
+  const l = live(pid);
+  return l?.thumbs[0]
+    ? `<img class="thumb" src="${esc(l.thumbs[0])}" alt="" loading="lazy" decoding="async" data-pid="${esc(pid)}" title="Show ${esc(l.name)}">`
+    : `<div class="thumb none" data-thumb="${esc(pid)}" aria-hidden="true">${icon(kind)}</div>`;
+};
+const ratingSlot = pid => {
+  const l = live(pid);
+  return l?.rating ? ratingHtml(l) : `<span data-rating="${esc(pid)}" hidden></span>`;
+};
+/* Fetch details only for rows that scroll into view. */
+const placeObserver = "IntersectionObserver" in window ? new IntersectionObserver(entries => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    placeObserver.unobserve(e.target);
+    const pid = e.target.dataset.thumb;
+    ensurePlace(pid).then(() => paintPlace(pid));
+  }
+}, { rootMargin: "300px" }) : null;
+function hydrate(root) {
+  if (!placeObserver || !window.TripGoogle?.hasKey()) return;
+  $$(".thumb.none[data-thumb]", root).forEach(el => placeObserver.observe(el));
+}
+function paintPlace(pid) {
+  const l = live(pid);
+  if (!l) return;
+  const sel = CSS.escape(pid);
+  if (l.thumbs[0]) $$(`.thumb.none[data-thumb="${sel}"]`).forEach(el => { el.outerHTML = thumbHtml(pid); });
+  if (l.rating) $$(`[data-rating="${sel}"]`).forEach(el => { el.outerHTML = ratingHtml(l); });
+}
+
+/* ---------- Trip header ---------- */
+function renderHead() {
+  const s = dateOf(META.start), e = dateOf(META.end);
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const dates = `${WD[s.getDay()]} ${s.getDate()} ${MON[s.getMonth()]}${sameYear ? "" : " " + s.getFullYear()} – ${WD[e.getDay()]} ${e.getDate()} ${MON[e.getMonth()]} ${e.getFullYear()}`;
+  document.title = `${META.title} · ${dates}`;
+  $("#trip-crumb").textContent = `${META.emoji ? META.emoji + " " : ""}${META.title}`;
+  $("#trip-version").textContent = META.version || "";
+  $("#trip-version").hidden = !META.version;
+  $("#trip-title").textContent = META.title;
+  $("#trip-dates").innerHTML = `${esc(dates)} <span class="tm-sub">${META.days} day${META.days === 1 ? "" : "s"}, ${META.nights} night${META.nights === 1 ? "" : "s"}</span>`;
+  $("#trip-route").textContent = META.routeLine || (META.route || []).join(" · ");
+  $("#trip-budget").innerHTML = META.budget ? `${esc(META.budget)}${META.budgetNote ? ` <span class="tm-sub warn">${esc(META.budgetNote)}</span>` : ""}` : "";
+  $("#trip-budget-row").hidden = !META.budget;
 }
 
 let VISITS = {};
@@ -223,10 +215,10 @@ function galleryHtml(p) {
   const ph = p.photos || [];
   if (!ph.length) return "";
   return `<div class="gal">
-    <div class="strip">${ph.map((s, i) => `<img src="${s}" alt="${esc(p.name)} photo ${i + 1}" loading="lazy" decoding="async" data-i="${i}">`).join("")}</div>
+    <div class="strip">${ph.map((s, i) => `<img src="${esc(s)}" alt="${esc(p.name)} photo ${i + 1}" loading="lazy" decoding="async" data-i="${i}">`).join("")}</div>
     ${ph.length > 1 ? `<button type="button" class="nav prev" aria-label="Previous photo" hidden>${ARROW.l}</button><button type="button" class="nav next" aria-label="Next photo">${ARROW.r}</button>` : ""}
     <span class="count num">1 / ${ph.length}</span>
-    ${ph.length > 1 ? `<div class="thumbs">${ph.map((s, i) => `<img src="${s}" alt="" data-i="${i}" class="${i ? "" : "on"}">`).join("")}</div>` : ""}
+    ${ph.length > 1 ? `<div class="thumbs">${p.thumbs.map((s, i) => `<img src="${esc(s)}" alt="" data-i="${i}" class="${i ? "" : "on"}">`).join("")}</div>` : ""}
   </div>`;
 }
 function wireGallery(root, p) {
@@ -272,13 +264,18 @@ function renderPop(p) {
   const mb = $('[data-act="map"]', pop); if (mb) mb.onclick = () => { hidePop(); showPlaceOnMap(p.id); };
 }
 function showPop(anchor, pid) {
-  const p = P[pid]; if (!p) return;
+  const p = live(pid); if (!p) return;
   clearTimeout(popHide);
   if (popFor === anchor && !pop.hidden) return;
   $$(".chip.on").forEach(c => c.classList.remove("on"));
   anchor.classList?.add("on");
   popFor = anchor; renderPop(p); pop.hidden = false;
   placePop(anchor);
+  if (!TripGoogle.cachedDetails(P[pid].placeId)) {
+    ensurePlace(pid).then(g => {
+      if (g && popFor === anchor && !pop.hidden) { renderPop(live(pid)); placePop(anchor); }
+    });
+  }
 }
 function placePop(anchor) {
   if (isPhone()) { $("#scrim").hidden = false; return; }
@@ -319,11 +316,11 @@ document.addEventListener("click", e => {
 /* ---------- Lightbox ---------- */
 let lbPlace = null, lbIdx = 0, lbReturnFocus = null;
 function openLightbox(pid, i) {
-  const p = P[pid]; if (!p?.photos?.length) return;
+  const p = live(pid); if (!p?.photos?.length) return;
   lbPlace = p; lbReturnFocus = document.activeElement;
   hidePop();
   $("#lb-title").textContent = p.name;
-  $("#lb-strip").innerHTML = p.photos.map((s, j) => `<img src="${s}" alt="" data-i="${j}" ${j === i ? 'class="on"' : ""}>`).join("");
+  $("#lb-strip").innerHTML = p.thumbs.map((s, j) => `<img src="${esc(s)}" alt="" data-i="${j}" ${j === i ? 'class="on"' : ""}>`).join("");
   $$("#lb-strip img").forEach(t => t.onclick = () => lbShow(+t.dataset.i));
   $("#lb").hidden = false; lbShow(i);
   $("#lb-close").focus();
@@ -332,7 +329,7 @@ function lbShow(i) {
   const n = lbPlace.photos.length; lbIdx = (i + n) % n;
   const im = $("#lb-img");
   im.src = lbPlace.photos[lbIdx]; im.alt = `${lbPlace.name} photo ${lbIdx + 1}`;
-  $("#lb-count").textContent = `${lbIdx + 1} / ${n}`;
+  $("#lb-count").textContent = `${lbIdx + 1} / ${n}${lbPlace.credits[lbIdx] ? " · Photo: " + lbPlace.credits[lbIdx] : ""}`;
   $$("#lb-strip img").forEach((t, j) => t.classList.toggle("on", j === lbIdx));
   $("#lb-prev").hidden = $("#lb-next").hidden = n < 2;
   const pre = lbPlace.photos[(lbIdx + 1) % n]; if (n > 1 && pre) { const x = new Image(); x.src = pre; }
@@ -354,16 +351,28 @@ $("#lb").addEventListener("click", e => { if (e.target.id === "lb" || e.target.c
 /* ---------- Side peek ---------- */
 let peekFor = null, peekReturnFocus = null;
 function openPeek(pid, opts = {}) {
-  const p = P[pid]; if (!p) return;
+  if (!P[pid]) return;
   hidePop();
   if (!peekFor) peekReturnFocus = document.activeElement;
   peekFor = pid;
-  const ph = p.photos || [], prev = prevStop(pid);
+  renderPeek(pid);
+  $("#peek-body").scrollTop = 0;
+  $("#peek").classList.add("open"); $("#peek").setAttribute("aria-hidden", "false");
+  $("#scrim").hidden = false;
+  if (opts.hash !== false) setHash("place-" + pid);
+  if (!isPhone()) $("#peek-close").focus();
+  if (!TripGoogle.cachedDetails(P[pid].placeId)?.full) {
+    ensurePlace(pid, true).then(g => { if (g && peekFor === pid) renderPeek(pid); });
+  }
+}
+function renderPeek(pid) {
+  const p = live(pid);
+  const ph = p.photos, prev = prevStop(pid);
   const dir = p.lat && prev?.lat ? `https://www.google.com/maps/dir/?api=1&origin=${prev.lat},${prev.lng}&destination=${encodeURIComponent(p.gname || p.name)}${p.placeId ? "&destination_place_id=" + p.placeId : ""}&travelmode=transit` : null;
   const prop = (label, val) => val ? `<div class="prop"><div class="pk">${label}</div><div class="pv">${val}</div></div>` : "";
   $("#peek-gmaps").href = gmapsUrl(p);
   $("#peek-body").innerHTML = `
-    ${ph.length ? `<div class="peek-cover ${ph.length === 1 ? "n1" : ph.length === 2 ? "n2" : ""}">${ph.slice(0, 3).map((s, i) => `<img src="${s}" alt="${esc(p.name)} photo ${i + 1}" ${i ? 'loading="lazy"' : ""} decoding="async" data-i="${i}">`).join("")}</div>` : ""}
+    ${ph.length ? `<div class="peek-cover ${ph.length === 1 ? "n1" : ph.length === 2 ? "n2" : ""}">${ph.slice(0, 3).map((s, i) => `<img src="${esc(s)}" alt="${esc(p.name)} photo ${i + 1}" ${i ? 'loading="lazy"' : ""} decoding="async" data-i="${i}">`).join("")}</div>` : ""}
     <div class="peek-in">
       <h2>${esc(p.name)}</h2>
       <div class="props">
@@ -374,19 +383,14 @@ function openPeek(pid, opts = {}) {
         ${prop("On your trip", (VISITS[pid] || []).map(v => `<button type="button" class="visit" data-day-visit="${v.day.d}"><b>Day ${v.day.d}</b><span>${fmtDay(v.day.date)}${v.it.s ? " · " + v.it.s : ""}</span></button>`).join(""))}
       </div>
       ${p.desc ? `<p style="margin:4px 0 0">${esc(p.desc)}</p>` : ""}
-      ${ph.length > 1 ? `<h4>Photos <span style="color:var(--faint);font-weight:400">${ph.length}</span></h4><div class="photos">${ph.map((s, i) => `<img src="${s}" alt="${esc(p.name)} photo ${i + 1}" loading="lazy" decoding="async" data-i="${i}">`).join("")}</div>` : ""}
+      ${ph.length > 1 ? `<h4>Photos <span style="color:var(--faint);font-weight:400">${ph.length}</span></h4><div class="photos">${p.thumbs.map((s, i) => `<img src="${esc(s)}" alt="${esc(p.name)} photo ${i + 1}" loading="lazy" decoding="async" data-i="${i}">`).join("")}</div>` : ""}
       ${p.quotes?.length ? `<h4>What visitors say</h4>${p.quotes.map(q => `<div class="quote">${esc(q.t)}<small><span class="star">${"★".repeat(q.r || 0)}</span> ${esc(q.a || "Google review")}${q.d ? " · " + esc(q.d) : ""}</small></div>`).join("")}<div><a class="btn" href="${gmapsUrl(p)}" target="_blank" rel="noopener">All ${p.reviews ? fmtCount(p.reviews) + " " : ""}reviews on Google ↗</a></div>` : ""}
       ${p.lat ? '<div><button type="button" class="btn" id="peek-map">Show on map</button></div>' : ""}
-      <div class="foot">Photos, ratings and reviews from Google Maps, collected October 2026.</div>
+      <div class="foot">${TripGoogle.hasKey() ? `Photos, rating and reviews: Google Maps${p.credits.length ? ` · Photos by ${esc([...new Set(p.credits.filter(Boolean))].slice(0, 3).join(", "))}` : ""}` : "Add a Google Maps key in Settings to see photos, ratings and reviews."}</div>
     </div>`;
   $$("#peek-body img[data-i]").forEach(im => im.onclick = () => openLightbox(pid, +im.dataset.i));
   $("#peek-map")?.addEventListener("click", () => { closePeek(); showPlaceOnMap(pid); });
   $$("#peek-body .visit").forEach(b => b.onclick = () => { closePeek(); openDay(+b.dataset.dayVisit); });
-  $("#peek-body").scrollTop = 0;
-  $("#peek").classList.add("open"); $("#peek").setAttribute("aria-hidden", "false");
-  $("#scrim").hidden = false;
-  if (opts.hash !== false) setHash("place-" + pid);
-  if (!isPhone()) $("#peek-close").focus();
 }
 function closePeek(opts = {}) {
   $("#peek").classList.remove("open"); $("#peek").setAttribute("aria-hidden", "true");
@@ -438,7 +442,7 @@ $(".views").addEventListener("keydown", e => {
 let itinDay = 1, mapDay = 0;
 function dayChips(el, withTrip, onPick) {
   el.innerHTML = (withTrip ? `<button type="button" class="daychip" data-day="0">Whole trip</button>` : "") +
-    DAYS.map(d => `<button type="button" class="daychip num" data-day="${d.d}">${fmtDay(d.date).replace(" Nov", "")}</button>`).join("");
+    DAYS.map(d => `<button type="button" class="daychip num" data-day="${d.d}">${fmtDayShort(d.date)}</button>`).join("");
   el.onclick = e => { const b = e.target.closest(".daychip"); if (b) onPick(+b.dataset.day); };
 }
 function markChip(el, n) {
@@ -448,25 +452,22 @@ function markChip(el, n) {
 }
 function renderItinerary() {
   $("#itin-list").innerHTML = DAYS.map(day => {
-    const dt = dateOf(day.date);
     const items = day.items.map(it => {
       const p = P[it.p] || {};
-      const ph = p.photos?.[0];
       const ytag = it.k ? `<span class="tag y-${String(it.k).toLowerCase().replace(/\s+/g, "-")}">${esc(it.k)}</span>` : "";
-      const dim = ph ? dimsOf(ph) : null;
       return `${it.tr ? `<div class="leg">${icon("transport")}<span>${esc(it.tr)}</span></div>` : ""}
       <div class="row" data-sid="${it.sid ? esc(it.sid) : ""}">
         <div class="t">${it.allDay ? "<b>All day</b>" : `<b>${it.approx ? "~" : ""}${it.s}</b>${it.e}`}</div>
-        ${ph ? `<img class="thumb" src="${ph}" ${dim ? `width="${dim.w}" height="${dim.h}"` : ""} alt="" loading="lazy" decoding="async" data-pid="${it.p}" title="Show ${esc(p.name)}">` : `<div class="thumb none" aria-hidden="true">${icon(kindOf(it))}</div>`}
+        ${it.p ? thumbHtml(it.p, kindOf(it)) : `<div class="thumb none" aria-hidden="true">${icon(kindOf(it))}</div>`}
         <div style="min-width:0">
           <h3>${esc(it.t)}</h3>
-          <div class="meta">${ytag}${it.p ? chip(it.p) : ""}${ratingHtml(p)}${p.suggested ? '<span class="tag sug">Suggestion</span>' : ""}${it.added ? `<span class="tag added">Added</span><button type="button" class="added-x" data-remove="${esc(it.sid)}" aria-label="Remove ${esc(it.t)}" title="Remove this added activity">×</button>` : ""}</div>
+          <div class="meta">${ytag}${it.p ? chip(it.p) + ratingSlot(it.p) : ""}${p.suggested ? '<span class="tag sug">Suggestion</span>' : ""}${it.added ? `<span class="tag added">Added</span><button type="button" class="added-x" data-remove="${esc(it.sid)}" aria-label="Remove ${esc(it.t)}" title="Remove this added activity">×</button>` : ""}</div>
           ${it.n ? `<p>${esc(it.n)}</p>` : ""}
         </div>
       </div>`;
     }).join("");
     return `<details class="day" id="day-${day.d}" data-day="${day.d}" open>
-      <summary><span class="tri" aria-hidden="true">${ARROW.r}</span><h2>${esc(day.title)}</h2><span class="when">Day ${day.d} · ${fmtDay(day.date)}<b>${dt.getMonth() + 1}月${dt.getDate()}日（${WDJ[dt.getDay()]}）</b></span></summary>
+      <summary><span class="tri" aria-hidden="true">${ARROW.r}</span><h2>${esc(day.title)}</h2><span class="when">Day ${day.d} · ${fmtDay(day.date)}${day.city && P[day.city] ? `<b>${esc(P[day.city].name)}</b>` : ""}</span></summary>
       <div class="day-body">
         ${day.purpose ? `<p class="purpose">${esc(day.purpose)}</p>` : ""}
         ${day.stay ? `<div class="callout"><span class="emo" aria-hidden="true">${icon("hotel")}</span><div>Tonight: ${chip(day.stay)}</div></div>` : ""}
@@ -477,6 +478,7 @@ function renderItinerary() {
   }).join("");
   dayChips($("#itin-days"), false, n => openDay(n));
   markChip($("#itin-days"), itinDay);
+  hydrate($("#itin-list"));
 }
 {
   let raf;
@@ -542,7 +544,6 @@ function applyChanges(changes) {
           mode: raw.travelMode ? normMode(raw.travelMode) : undefined,
           addTravel: Number.isFinite(+raw.travelMin) ? Math.round(+raw.travelMin) : undefined,
         };
-        alignAirportPlace(item);
         day.items.push(item); added.push(item); touched.add(day.d);
         if (focusDay == null) focusDay = day.d;
       } else if (op === "remove") {
@@ -580,7 +581,6 @@ function applyChanges(changes) {
         }
         if (raw.title !== undefined) item.t = String(raw.title).slice(0, 120);
         if (raw.note !== undefined) item.n = String(raw.note).slice(0, 320);
-        alignAirportPlace(item);
         if (raw.start !== undefined || raw.end !== undefined) {
           const s = raw.start !== undefined ? normTime(raw.start) : item.s;
           const e = raw.end !== undefined ? normTime(raw.end) : item.e;
@@ -596,10 +596,6 @@ function applyChanges(changes) {
       }
     }
     DAYS.forEach(day => day.items.sort(sortDayItems));
-    if (repairAirportMismatch()) {
-      touched.add(1);
-      if (focusDay == null) focusDay = 1;
-    }
     const first = focusDay || [...touched].sort((a, b) => a - b)[0];
     indexVisits();
     savePlan();
@@ -614,14 +610,7 @@ function applyChanges(changes) {
       markChip($("#itin-days"), first);
       updateStopList();
       markChip($("#map-days"), first);
-      if (map) {
-        renderMapFor(first);
-        requestAnimationFrame(() => {
-          if (!map) return;
-          map.resize();
-          map.triggerRepaint();
-        });
-      }
+      if (map) renderMapFor(first);
       if (currentTab === "itinerary" && !isPhone()) {
         requestAnimationFrame(() => {
           const sec = $("#day-" + first);
@@ -676,10 +665,18 @@ function openDay(n, opts = {}) {
 }
 
 /* ---------- Calendar ---------- */
-const WEEKS = ["2026-11-09", "2026-11-16", "2026-11-23"];
+const isoOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (iso, n) => { const d = dateOf(iso); d.setDate(d.getDate() + n); return isoOf(d); };
+/* Monday-based weeks covering the whole trip. */
+const WEEKS = (() => {
+  const first = dateOf(DAYS[0].date);
+  let w = addDays(isoOf(first), -((first.getDay() + 6) % 7));
+  const out = [];
+  for (; w <= DAYS[DAYS.length - 1].date; w = addDays(w, 7)) out.push(w);
+  return out;
+})();
 let calIdx = 0, calDayIdx = 0, calRenderQueued = false;
 const H0 = 5, H1 = 24;
-const addDays = (iso, n) => { const d = dateOf(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const calPhone = () => matchMedia("(max-width: 700px)").matches;
 const todayISO = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
 
@@ -720,7 +717,7 @@ function renderCalendar() {
   const colH = `height:calc(${H1 - H0} * var(--hh))`;
   const head = dates.map(iso => {
     const d = dateOf(iso), day = byDate[iso];
-    return `<div class="cal-colhead ${day ? "" : "off"} ${iso === todayISO ? "today" : ""}">${WD[d.getDay()]} ${WDJ[d.getDay()]}<b class="num">${d.getDate()}</b><span class="dn">${day ? `Day ${day.d}` : "Not on trip"}</span></div>`;
+    return `<div class="cal-colhead ${day ? "" : "off"} ${iso === todayISO ? "today" : ""}">${WD[d.getDay()]}<b class="num">${d.getDate()}</b><span class="dn">${day ? `Day ${day.d}` : "Not on trip"}</span></div>`;
   }).join("");
   // All-day events live in a fixed bar above the scrolling hours, so the
   // hotel or flight stays visible when the grid scrolls to the evening.
@@ -961,144 +958,64 @@ addEventListener("resize", () => {
   requestAnimationFrame(() => { calRenderQueued = false; if (currentTab === "calendar") renderCalendar(); });
 });
 
-/* ---------- Map ---------- */
-let map = null, markers = [], mapReady = false, pendingRender = null, protocol = null;
-const REG = D.regions;
+/* ---------- Map (Google Maps) ---------- */
+let map = null, markers = [], routeOverlays = [], mapReady = false, mapLoading = false, pendingRender = null;
+const readyQueue = [];
 const dark = () => document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-const added = new Set();
+const ROUTE_STYLE = {
+  walk: { color: "#2f9e44", width: 3.4, dash: "dot" },
+  rail: { color: "#2383e2", width: 4.2 },
+  bus: { color: "#e8590c", width: 4.0 },
+  car: { color: "#7048e8", width: 3.0, dash: "dash" },
+  flight: { color: "#868e96", width: 2.2, dash: "dash" },
+};
 
-function regionVisible(r) {
-  const b = map.getBounds(), z = map.getZoom();
-  if (z < r.minz) return false;
-  return !(b.getEast() < r.bbox[0] || b.getWest() > r.bbox[2] || b.getNorth() < r.bbox[1] || b.getSouth() > r.bbox[3]);
-}
-function addRegion(r) {
-  added.add(r.id);
-  const url = new URL(`tiles/${r.id}.pmtiles`, location.href).href;
-  map.addSource(r.id, { type: "vector", url: "pmtiles://" + url, attribution: '<a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a> · <a href="https://protomaps.com" target="_blank" rel="noopener">Protomaps</a>' });
-  const later = REG.slice(REG.indexOf(r) + 1).find(x => added.has(x.id) && map.getLayer(x.id + ":first"));
-  const before = later ? later.id + ":first" : (map.getLayer("routes-casing") ? "routes-casing" : undefined);
-  let layers = basemaps.layers(r.id, basemaps.namedFlavor(dark() ? "dark" : "light"), { lang: "en" });
-  if (r.id !== REG[0].id) layers = layers.filter(l => l.type !== "background");
-  layers.forEach((l, i) => map.addLayer({ ...l, id: i === 0 ? r.id + ":first" : r.id + ":" + l.id }, before));
-}
-function syncRegions() { REG.forEach(r => { if (!added.has(r.id) && regionVisible(r)) addRegion(r); }); }
-
-function initMap() {
-  if (map || !window.maplibregl || !window.pmtiles || !window.basemaps) return;
-  protocol = new pmtiles.Protocol();
-  maplibregl.addProtocol("pmtiles", protocol.tile);
-  const base = new URL(".", location.href).href;
-  const FONT = { "Noto Sans Regular": "noto-regular", "Noto Sans Medium": "noto-medium", "Noto Sans Italic": "noto-italic" };
-  map = new maplibregl.Map({
-    container: "map",
-    style: { version: 8, glyphs: base + "fonts/{fontstack}/{range}.pbf", sprite: base + "sprites/" + (dark() ? "dark" : "light"), sources: {}, layers: [] },
-    bounds: [[135.4, 34.4], [140.5, 36.0]], fitBoundsOptions: { padding: 40 },
-    attributionControl: { compact: true }, localIdeographFontFamily: "'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic', sans-serif",
-    transformRequest: url => {
-      const u = new URL(url, location.href);
-      const m = u.pathname.match(/\/fonts\/([^/]+)\/(\d+-\d+)\.pbf$/);
-      if (m) {
-        const name = FONT[decodeURIComponent(m[1])] || "noto-regular";
-        return { url: base + "fonts/" + name + "-" + m[2] + ".pbf" };
-      }
-      return { url };
-    },
-  });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-  map.on("load", () => {
-    map.on("move", avoidPinOverlap);
-    map.on("moveend", avoidPinOverlap);
-    map.addSource("routes", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-    map.addLayer({ id: "routes-casing", type: "line", source: "routes", layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": dark() ? "#191919" : "#ffffff", "line-width": 8, "line-opacity": .9 } });
-    const ROUTE_STYLE = {
-      walk: { color: "#2f9e44", width: 3.4, dash: [0.4, 1.4] },
-      rail: { color: "#2383e2", width: 4.2 },
-      bus: { color: "#e8590c", width: 4.0 },
-      car: { color: "#7048e8", width: 3.0, dash: [2, 1.4] },
-      flight: { color: "#868e96", width: 2.2, dash: [1, 2] },
-    };
-    for (const [kind, st] of Object.entries(ROUTE_STYLE)) {
-      map.addLayer({ id: "routes-" + kind, type: "line", source: "routes", filter: ["==", ["get", "kind"], kind],
-        layout: { "line-cap": kind === "walk" ? "round" : "butt", "line-join": "round" },
-        paint: { "line-color": st.color, "line-width": st.width, "line-opacity": .95, ...(st.dash ? { "line-dasharray": st.dash } : {}) } });
-    }
-    map.addLayer({ id: "routes-approx", type: "line", source: "routes", filter: ["==", ["get", "approx"], true],
-      layout: { "line-cap": "butt" }, paint: { "line-color": dark() ? "#ced4da" : "#495057", "line-width": 2, "line-dasharray": [1, 1.5], "line-opacity": .9 } });
-    // Whole-trip stops cluster in screen space, so the country view stays legible.
-    map.addSource("stops", { type: "geojson", data: { type: "FeatureCollection", features: [] }, cluster: true, clusterRadius: 40, clusterMaxZoom: 7 });
-    map.addLayer({ id: "stops-cluster", type: "circle", source: "stops", filter: ["has", "point_count"],
-      paint: { "circle-color": dark() ? "#529cca" : "#2383e2", "circle-radius": ["step", ["get", "point_count"], 15, 4, 19], "circle-stroke-width": 2, "circle-stroke-color": dark() ? "#191919" : "#ffffff" } });
-    map.addLayer({ id: "stops-cluster-count", type: "symbol", source: "stops", filter: ["has", "point_count"],
-      layout: { "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Medium"], "text-size": 12 },
-      paint: { "text-color": "#ffffff" } });
-    map.addLayer({ id: "stops-point", type: "circle", source: "stops", filter: ["!", ["has", "point_count"]],
-      paint: { "circle-color": ["match", ["get", "kind"], "hotel", "#337ea9", "city", "#9f6b53", "food", "#d9730d", "sight", "#e03e3e", "#448361"],
-        "circle-radius": 11, "circle-stroke-width": 2, "circle-stroke-color": dark() ? "#191919" : "#ffffff" } });
-    map.addLayer({ id: "stops-label", type: "symbol", source: "stops", filter: ["!", ["has", "point_count"]],
-      layout: { "text-field": ["get", "label"], "text-font": ["Noto Sans Medium"], "text-size": 11, "text-allow-overlap": true },
-      paint: { "text-color": "#ffffff" } });
-    map.on("click", "stops-cluster", e => {
-      const f = e.features?.[0]; if (!f) return;
-      map.getSource("stops").getClusterExpansionZoom(f.properties.cluster_id).then(z => {
-        map.easeTo({ center: f.geometry.coordinates, zoom: Math.min(z + 0.4, 12), duration: 600 });
-      }).catch(() => {});
+async function initMap() {
+  if (map || mapLoading) return;
+  if (!TripGoogle.hasKey()) {
+    setMapStatus("Add a Google Maps key in Settings to see the map.", true);
+    $("#map").innerHTML = '<p class="map-empty">Add a Google Maps key in Settings to see the map.</p>';
+    return;
+  }
+  mapLoading = true;
+  try {
+    await TripGoogle.loadMaps();
+    const { Map } = await google.maps.importLibrary("maps");
+    await google.maps.importLibrary("marker");
+    const start = STOP_LIST[0] ? P[STOP_LIST[0].id] : null;
+    map = new Map($("#map"), {
+      mapId: TripGoogle.mapId(), colorScheme: dark() ? "DARK" : "LIGHT",
+      center: start ? { lat: start.lat, lng: start.lng } : { lat: 20, lng: 0 }, zoom: start ? 6 : 2,
+      disableDefaultUI: true, zoomControl: true, gestureHandling: "greedy", clickableIcons: false,
     });
-    map.on("click", "stops-point", e => { const id = e.features?.[0]?.properties?.id; if (id) openPeek(id); });
-    for (const layer of ["stops-cluster", "stops-point"]) {
-      map.on("mouseenter", layer, () => { map.getCanvas().style.cursor = "pointer"; });
-      map.on("mouseleave", layer, () => { map.getCanvas().style.cursor = ""; });
-    }
-    (async () => {
-      await Promise.all(["walk", "rail", "bus", "car", "flight"].map(kind => new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => {
-          if (!map.hasImage("mode-" + kind)) {
-            try { map.addImage("mode-" + kind, img, { pixelRatio: 2 }); } catch {}
-          }
-          resolve();
-        };
-        img.onerror = () => resolve();
-        img.src = `icons/${kind}.png`;
-      })));
-      if (!map.getLayer("routes-icons")) {
-        map.addLayer({ id: "routes-icons", type: "symbol", source: "routes",
-          layout: { "symbol-placement": "line", "symbol-spacing": 96, "icon-image": ["get", "icon"], "icon-size": 0.42,
-            "icon-allow-overlap": true, "icon-ignore-placement": true, "icon-rotation-alignment": "viewport", "icon-pitch-alignment": "viewport", "symbol-avoid-edges": false },
-          paint: { "icon-opacity": .98 } });
-      }
-    })();
-    syncRegions(); mapReady = true;
+    map.addListener("idle", avoidPinOverlap);
+    map.addListener("zoom_changed", avoidPinOverlap);
+    mapReady = true;
+    setMapStatus("");
+    readyQueue.splice(0).forEach(fn => fn());
     if (pendingRender !== null) { const n = pendingRender; pendingRender = null; renderMapFor(n); }
-  });
-  map.on("moveend", syncRegions);
+  } catch {
+    setMapStatus("Google Maps could not load. Check the key in Settings.", true);
+  } finally { mapLoading = false; }
 }
+addEventListener("google-auth-failed", () => setMapStatus("Google rejected the Maps key. Check it in Settings.", true));
+addEventListener("google-error", e => {
+  const box = $("#google-error");
+  box.querySelector("ul").insertAdjacentHTML("beforeend", `<li><b>${esc(e.detail.api)}:</b> ${esc(e.detail.message)}</li>`);
+  box.hidden = false;
+});
+$("#google-error-settings").addEventListener("click", () => TripSettings.open({ focus: "google" }));
+$("#google-error-close").addEventListener("click", () => { $("#google-error").hidden = true; });
+function whenMapReady(fn) { mapReady ? fn() : readyQueue.push(fn); }
 function mountMap(sel) {
   const slot = $(sel), mapEl = $("#map"); if (!slot || !mapEl) return;
   mapEl.hidden = false;
   slot.appendChild(mapEl);
   initMap();
-  if (map) requestAnimationFrame(() => map.resize());
 }
-function clearMarkers() { markers.forEach(m => m.remove()); markers = []; }
-function showStopLayers(on) {
-  ["stops-cluster", "stops-cluster-count", "stops-point", "stops-label"].forEach(id => {
-    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
-  });
-}
-function stopFeatures() {
-  return {
-    type: "FeatureCollection",
-    features: STOP_LIST.map(s => ({
-      type: "Feature",
-      properties: { id: s.id, label: String(s.n), kind: P[s.id].kind, day: s.day },
-      geometry: { type: "Point", coordinates: [P[s.id].lng, P[s.id].lat] },
-    })),
-  };
-}
+function clearMarkers() { markers.forEach(m => { m.marker.map = null; }); markers = []; }
 function addPin(p, label, cls = "", onClick, markerOpts = {}) {
-  const { prio = 50, ...opts } = markerOpts;
+  const { prio = 50 } = markerOpts;
   const el = document.createElement("button");
   el.type = "button";
   el.className = `pin k-${p.kind} ${cls}`.trim(); el.innerHTML = label; el.dataset.mpid = p.id;
@@ -1106,7 +1023,8 @@ function addPin(p, label, cls = "", onClick, markerOpts = {}) {
   el.setAttribute("aria-label", p.name);
   el.onclick = e => { e.stopPropagation(); onClick ? onClick() : showPop(el, p.id); };
   if (finePointer && !onClick) { el.onmouseenter = () => { clearTimeout(popTimer); popTimer = setTimeout(() => showPop(el, p.id), 200); }; el.onmouseleave = () => { clearTimeout(popTimer); popHide = setTimeout(hidePop, 250); }; }
-  markers.push(new maplibregl.Marker({ element: el, ...opts }).setLngLat([p.lng, p.lat]).addTo(map));
+  const marker = new google.maps.marker.AdvancedMarkerElement({ map, position: { lat: p.lat, lng: p.lng }, content: el, zIndex: 1000 - prio });
+  markers.push({ marker, el });
 }
 
 /* At country zoom several stops land on the same pixels. Keep the most important
@@ -1116,17 +1034,27 @@ function avoidPinOverlap() {
   if (!map) return;
   cancelAnimationFrame(pinRaf);
   pinRaf = requestAnimationFrame(() => {
-    const pins = [...markers].sort((a, b) => (+a.getElement().dataset.prio || 50) - (+b.getElement().dataset.prio || 50));
+    const pins = [...markers].sort((a, b) => (+a.el.dataset.prio || 50) - (+b.el.dataset.prio || 50));
     const boxes = [];
-    pins.forEach(m => { m.getElement().style.visibility = ""; });
+    pins.forEach(m => { m.el.style.visibility = ""; });
     for (const m of pins) {
-      const el = m.getElement(), r = el.getBoundingClientRect();
+      const r = m.el.getBoundingClientRect();
       if (!r.width) continue;
       const hit = boxes.some(b => !(r.right + 2 < b.left || r.left - 2 > b.right || r.bottom + 2 < b.top || r.top - 2 > b.bottom));
-      if (hit) el.style.visibility = "hidden"; else boxes.push(r);
+      if (hit) m.el.style.visibility = "hidden"; else boxes.push(r);
     }
   });
 }
+/* Fit points given as [lng, lat]. */
+function fitTo(pts, padding = 60, maxZoom = 15) {
+  if (!map || !pts.length) return;
+  if (pts.length === 1) { map.panTo({ lat: pts[0][1], lng: pts[0][0] }); map.setZoom(Math.min(maxZoom, 14)); return; }
+  const b = new google.maps.LatLngBounds();
+  pts.forEach(([lng, lat]) => b.extend({ lat, lng }));
+  map.fitBounds(b, padding);
+  google.maps.event.addListenerOnce(map, "idle", () => { if (map.getZoom() > maxZoom) map.setZoom(maxZoom); });
+}
+function flyTo(p, zoom) { if (!map) return; map.panTo({ lat: p.lat, lng: p.lng }); map.setZoom(zoom); }
 
 
 let mapToken = 0, routeTimer = 0, routesFor = null, routesHave = false;
@@ -1138,7 +1066,7 @@ function placePt(id) {
 function legKind(text, meters) {
   const t = String(text || "").toLowerCase();
   const flight = /\b(flight|fly|plane)\b/.test(t);
-  const rail = /\b(shinkansen|train|rail|railway|metro|subway|jr|keihan|keisei|skyliner|hikari|kodama|monorail|tram|ropeway|ferry)\b/.test(t) || /fuji excursion/.test(t);
+  const rail = /\b(shinkansen|train|rail|railway|metro|subway|underground|tube|monorail|tram|ropeway|ferry)\b/.test(t);
   const bus = /\b(bus|coach|shuttle)\b/.test(t);
   const car = /\b(taxi|cab|car|drive|uber)\b/.test(t);
   const walk = /\b(walk|walking|foot|stroll|hike)\b/.test(t);
@@ -1157,15 +1085,14 @@ function legKind(text, meters) {
   return meters < 2200 ? "walk" : "rail";
 }
 function departISOFor(day, time) {
-  const t = /^\d{2}:\d{2}$/.test(String(time || "")) ? time : "09:00";
-  return `${day.date}T${t}:00+09:00`;
+  return TripRouting.zonedISO(day.date, time, day.tz || META.timeZone);
 }
 function routeFeature(l, leg, day, r) {
   if (!l.coordinates || l.coordinates.length < 2) return null;
   return {
     type: "Feature",
     properties: {
-      kind: l.kind, icon: "mode-" + l.kind,
+      kind: l.kind,
       duration: Math.max(1, Math.round(l.duration ?? r.duration ?? 0)),
       distance: Math.round(l.distance || 0),
       approx: !!(r.approximate || l.approximate),
@@ -1232,36 +1159,55 @@ async function buildDayRoute(day) {
   return combineRoutes(results, day);
 }
 
+/* Whole trip: one leg per change of base, by the mode the day's plan mentions. */
 async function buildTripRoute() {
   if (!window.TripRouting) return { features: [], approximate: true };
-  const kyoto = DAYS.find(d => d.city === "kyoto" && d.stay)?.stay;
-  const at = id => id === "@kyoto" ? kyoto : id;
-  const stopDay = id => {
-    const hit = TRIP.stops.find(([sid]) => at(sid) === id);
-    return hit?.[3] || 9;
-  };
-  const TRIP_DAYS = { "hotel-tokyo>fuji-lake-hotel": 5, "fuji-lake-hotel>hotel-kyoto-station": 8, "hotel-kyoto-station>hotel-tokyo": 14, "hotel-tokyo>shanghai": 18 };
-  const pairs = [];
-  for (let i = 1; i < TRIP.route.length; i++) {
-    const a = at(TRIP.route[i - 1]), b = at(TRIP.route[i]);
-    if (P[a]?.lat && P[b]?.lat) pairs.push({ a, b, kind: b === "shanghai" ? "flight" : "rail", day: TRIP_DAYS[a + ">" + b] || stopDay(b) });
+  const pairs = [], seen = new Set();
+  for (let i = 1; i < BASES.length; i++) {
+    const a = placePt(BASES[i - 1].id), b = placePt(BASES[i].id);
+    const k = BASES[i - 1].id + ">" + BASES[i].id;
+    if (!a || !b || seen.has(k)) continue;
+    seen.add(k);
+    const day = DAYS[BASES[i].days[0] - 1];
+    const meters = TripRouting.haversine(a, b);
+    const text = day.items.filter(it => it.c === "transport" || it.mode).map(it => [it.t, it.mode].join(" ")).join(". ");
+    let kind = meters > 1000000 ? "flight" : legKind(text, meters);
+    if (kind === "walk") kind = "rail";
+    pairs.push({ a, b, kind, day });
   }
-  // Day trips (Nara, Himeji) are drawn on their day views, not on the
-  // overnight route; this keeps the first whole-trip load quick.
-  const seen = new Set();
-  const unique = pairs.filter(p => { const k = p.a + ">" + p.b; if (seen.has(k)) return false; seen.add(k); return true; });
-  const results = await Promise.all(unique.map(async p => {
-    const day = DAYS[(p.day || 9) - 1] || DAYS[8];
-    return {
-      leg: { from: placePt(p.a), to: placePt(p.b), kind: p.kind, text: "" },
-      r: await TripRouting.routeLeg({ kind: p.kind, from: placePt(p.a), to: placePt(p.b), departISO: departISOFor(day, "09:00") }),
-    };
-  }));
+  const results = await Promise.all(pairs.map(async p => ({
+    leg: { from: p.a, to: p.b, kind: p.kind, text: "" },
+    r: await TripRouting.routeLeg({ kind: p.kind, from: p.a, to: p.b, departISO: departISOFor(p.day, "09:00") }),
+  })));
   return combineRoutes(results, null);
 }
 
 function setRouteData(features) {
-  map.getSource("routes")?.setData({ type: "FeatureCollection", features });
+  routeOverlays.forEach(o => { if (o.setMap) o.setMap(null); else o.map = null; });
+  routeOverlays = [];
+  if (map) {
+    const casing = dark() ? "#191919" : "#ffffff";
+    for (const f of features) {
+      const path = f.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+      const st = ROUTE_STYLE[f.properties.kind] || ROUTE_STYLE.rail;
+      const color = f.properties.approx ? (dark() ? "#ced4da" : "#495057") : st.color;
+      const dash = f.properties.approx ? "dash" : st.dash;
+      routeOverlays.push(new google.maps.Polyline({ map, path, clickable: false, zIndex: 1, strokeColor: casing, strokeOpacity: .9, strokeWeight: st.width + 4 }));
+      const symbol = dash === "dot"
+        ? { path: google.maps.SymbolPath.CIRCLE, fillColor: color, fillOpacity: 1, strokeOpacity: 0, scale: st.width / 1.7 }
+        : { path: "M 0,-1 0,1", strokeColor: color, strokeOpacity: 1, strokeWeight: st.width, scale: 2.5 };
+      routeOverlays.push(new google.maps.Polyline({
+        map, path, clickable: false, zIndex: 2, strokeColor: color, strokeWeight: st.width, strokeOpacity: dash ? 0 : .95,
+        icons: dash ? [{ icon: symbol, offset: "0", repeat: dash === "dot" ? "9px" : "14px" }] : [],
+      }));
+      // A mode badge in the middle of each leg that is long enough to read.
+      if (f.properties.distance > 400 || f.properties.kind === "flight") {
+        const img = document.createElement("img");
+        img.src = `icons/${f.properties.kind}.png`; img.alt = ""; img.className = "route-badge";
+        routeOverlays.push(new google.maps.marker.AdvancedMarkerElement({ map, position: path[Math.floor(path.length / 2)], content: img, zIndex: 3 }));
+      }
+    }
+  }
   routesHave = features.length > 0;
   const legend = $("#route-legend");
   if (legend) legend.hidden = !routesHave || currentTab !== "map";
@@ -1278,27 +1224,21 @@ function invalidateRoutes() { routesFor = null; routesHave = false; }
 function renderMapFor(n) {
   if (!map || !mapReady) { pendingRender = n; return; }
   const token = ++mapToken;
-  map.resize();
   clearMarkers();
   const ll = id => [P[id].lng, P[id].lat];
   let pts = [];
   if (!n) {
-    pts = STOP_LIST.map(s => [P[s.id].lng, P[s.id].lat]);
-    const src = map.getSource("stops");
-    if (src) src.setData(stopFeatures());
-    showStopLayers(true);
-    if (pts.length) map.fitBounds(bounds(pts.filter(p => p[0] < 141)), { padding: 60, duration: 600, maxZoom: 8 });
+    STOP_LIST.forEach(s => addPin(P[s.id], String(s.n), "", null, { prio: s.n }));
+    pts = STOP_LIST.map(s => ll(s.id));
+    fitTo(pts, 60, 11);
   } else {
-    showStopLayers(false);
-    const src = map.getSource("stops"); if (src) src.setData({ type: "FeatureCollection", features: [] });
     const day = DAYS[n - 1]; if (!day) { renderMapFor(0); return; }
     const seen = [];
     day.items.forEach(it => { if (it.p && P[it.p]?.lat && !it.allDay && !seen.includes(it.p)) seen.push(it.p); });
     if (!seen.length) { renderMapFor(0); return; }
     seen.forEach((id, i) => addPin(P[id], String(i + 1), "", null, { prio: i + 1 }));
     pts = seen.map(ll);
-    if (pts.length === 1) map.flyTo({ center: pts[0], zoom: 14, duration: 600 });
-    else map.fitBounds(bounds(pts), { padding: { top: 60, bottom: 50, left: 50, right: 50 }, duration: 700, maxZoom: 15 });
+    fitTo(pts, { top: 60, bottom: 50, left: 50, right: 50 }, 15);
   }
   setTimeout(avoidPinOverlap, 60);
   if (routesFor === n && routesHave) {
@@ -1320,16 +1260,11 @@ function renderMapFor(n) {
     setRouteData(result.features);
     if (result.features.length) {
       const routePts = result.features.flatMap(f => f.geometry.coordinates);
-      try { map.fitBounds(bounds([...pts, ...routePts]), { padding: { top: 60, bottom: 60, left: 60, right: 60 }, duration: 500, maxZoom: n ? 15 : 8 }); } catch {}
+      fitTo([...pts, ...routePts], 60, n ? 15 : 11);
     }
     if (result.features.length && result.approximate) setMapStatus("Some legs could not be routed — showing direct lines.", true);
     else setMapStatus("");
   }, 220);
-}
-function bounds(pts) {
-  const b = new maplibregl.LngLatBounds(pts[0], pts[0]);
-  pts.forEach(p => b.extend(p));
-  return b;
 }
 function pickMapDay(n) { mapDay = n; markChip($("#map-days"), n); updateStopList(); renderMapFor(n); }
 function showDayOnMap(n) {
@@ -1339,7 +1274,6 @@ function showDayOnMap(n) {
   markChip($("#map-days"), n); markChip($("#itin-days"), n); updateStopList();
   setTab("map");
   updateStopList();
-  requestAnimationFrame(() => { if (map) { map.resize(); map.triggerRepaint(); } });
 }
 function showPlaceOnMap(pid) {
   const p = P[pid]; if (!p?.lat) return;
@@ -1347,40 +1281,50 @@ function showPlaceOnMap(pid) {
   const wideItin = currentTab === "itinerary" && matchMedia("(min-width: 1380px)").matches;
   if (wideItin) renderMapFor(v ? v.day.d : itinDay);
   else { setTab("map"); pickMapDay(v ? v.day.d : 0); }
-  if (!map) return;
-  const go = () => {
-    if (!markers.some(m => m.getElement().dataset.mpid === pid)) addPin(p, "•");
-    map.flyTo({ center: [p.lng, p.lat], zoom: Math.max(map.getZoom(), 14), duration: 900 });
-    markers.forEach(m => m.getElement().classList.toggle("hl", m.getElement().dataset.mpid === pid));
-  };
-  mapReady ? setTimeout(go, 750) : map.once("load", () => setTimeout(go, 750));
+  whenMapReady(() => setTimeout(() => {
+    if (!markers.some(m => m.el.dataset.mpid === pid)) addPin(p, "•");
+    flyTo(p, Math.max(map.getZoom(), 14));
+    markers.forEach(m => m.el.classList.toggle("hl", m.el.dataset.mpid === pid));
+  }, 750));
 }
 function showPlacesOnMap(ids) {
   ids = (ids || []).filter(id => P[id]?.lat); if (!ids.length) return;
   setTab("map"); mapDay = 0; markChip($("#map-days"), 0); updateStopList();
   mapToken++; clearTimeout(routeTimer);
-  if (!map) return;
-  if (map?.isStyleLoaded()) showStopLayers(false);
   invalidateRoutes();
-  const go = () => {
+  whenMapReady(() => {
+    pendingRender = null;
     clearMarkers();
-    map.getSource("routes")?.setData({ type: "FeatureCollection", features: [] });
+    setRouteData([]);
     setMapStatus("");
     const legend = $("#route-legend"); if (legend) legend.hidden = true;
     ids.forEach((id, i) => addPin(P[id], String(i + 1), "", null, { prio: i + 1 }));
-    const pts = ids.map(id => [P[id].lng, P[id].lat]);
-    pts.length === 1 ? map.flyTo({ center: pts[0], zoom: 14 }) : map.fitBounds(bounds(pts), { padding: 60, maxZoom: 15 });
-  };
-  mapReady ? go() : map.once("load", go);
+    fitTo(ids.map(id => [P[id].lng, P[id].lat]), 60, 15);
+  });
 }
 dayChips($("#map-days"), true, pickMapDay);
 markChip($("#map-days"), 0);
 
+/* Bases: consecutive nights in the same place (a city on a day with no hotel). */
+const BASES = [];
+for (const day of DAYS) {
+  const id = day.stay && P[day.stay]?.lat != null ? day.stay : P[day.city]?.lat != null ? day.city : null;
+  if (!id) continue;
+  const last = BASES[BASES.length - 1];
+  // A last day without a hotel, in the same city, still belongs to that base.
+  const sameCity = last && !day.stay && (P[last.id].kind === "city" ? last.id : P[last.id].city) === day.city;
+  if (last?.id === id || sameCity) last.days.push(day.d); else BASES.push({ id, days: [day.d] });
+}
+const baseName = id => { const p = P[id]; return p.kind === "city" ? p.name : P[p.city]?.name || p.name; };
 /* Whole-trip stop list: names next to numbered pins, without colliding map labels. */
 const STOP_LIST = (() => {
-  const kyoto = DAYS.find(d => d.city === "kyoto" && d.stay)?.stay;
-  return TRIP.stops.map(([id, label, days, day], i) => ({ id: id === "@kyoto" ? kyoto : id, label, days, day, n: i + 1 }))
-    .filter(s => P[s.id]?.lat);
+  const byId = new Map();
+  BASES.forEach(b => { if (!byId.has(b.id)) byId.set(b.id, []); byId.get(b.id).push(b.days); });
+  return [...byId].map(([id, runs], i) => {
+    const total = runs.reduce((s, r) => s + r.length, 0);
+    const span = runs.map(r => r.length > 1 ? `${r[0]}–${r[r.length - 1]}` : `${r[0]}`).join(" · ");
+    return { id, label: baseName(id), days: (total > 1 ? "Days " : "Day ") + span, day: runs[0][0], n: i + 1 };
+  });
 })();
 function renderStopList() {
   const list = $("#map-stops");
@@ -1390,7 +1334,7 @@ function renderStopList() {
     const b = e.target.closest("[data-stop]"); if (!b) return;
     const s = STOP_LIST.find(x => String(x.n) === b.dataset.stop); if (!s || !map) return;
     $$("#map-stops .stop").forEach(x => x.classList.toggle("on", x === b));
-    map.flyTo({ center: [P[s.id].lng, P[s.id].lat], zoom: 9.6, duration: 800 });
+    flyTo(P[s.id], 11);
   };
 }
 function renderDayStopList(n) {
@@ -1408,7 +1352,7 @@ function renderDayStopList(n) {
     const b = e.target.closest("[data-daypid]"); if (!b || !map) return;
     const place = P[b.dataset.daypid]; if (!place) return;
     $$("#map-stops .stop").forEach(x => x.classList.toggle("on", x === b));
-    map.flyTo({ center: [place.lng, place.lat], zoom: Math.max(map.getZoom(), 13.5), duration: 700 });
+    flyTo(place, Math.max(map.getZoom(), 14));
   };
 }
 function updateStopList() {
@@ -1456,9 +1400,7 @@ function setChatOpen(open) {
   if (isPhone()) { if (!open) setView(currentTab); else setView("chat"); return; }
   document.body.classList.toggle("chat-closed", !open);
   store.set("trip-chat-open", open);
-  if (map) requestAnimationFrame(() => map.resize());
 }
-window.addEventListener("resize", () => { if (map) requestAnimationFrame(() => map.resize()); });
 matchMedia("(min-width: 1380px)").addEventListener?.("change", e => {
   if (e.matches && currentTab === "itinerary") { mountMap("#slot-itin"); renderMapFor(itinDay); }
 });
@@ -1474,6 +1416,7 @@ addEventListener("beforeprint", beforePrint);
 addEventListener("afterprint", afterPrint);
 
 /* ---------- Boot ---------- */
+renderHead();
 renderItinerary();
 const hashRoute = decodeURIComponent(location.hash.slice(1));
 const storedTab = store.get("trip-tab", "itinerary");
@@ -1492,7 +1435,7 @@ function openChat() {
 
 /* Expose what the assistant needs. */
 window.TripUI = {
-  D, P, DAYS, META, TRIP, md, inline, chip, esc, fmtDay, kindOf, gmapsUrl, dimsOf,
+  D, P, DAYS, META, md, inline, chip, esc, fmtDay, kindOf, gmapsUrl, live, ensurePlace,
   openDay, openPeek, closePeek, showPlacesOnMap, showPop, hidePop, isPhone,
   addActivity, removeActivity, applyChanges, showDayOnMap, openChat, openSlotDialog,
   get currentTab() { return currentTab; },

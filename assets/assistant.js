@@ -2,26 +2,21 @@
 /* Trip assistant — DeepSeek chat with a browser-held key. */
 (() => {
 const UI = window.TripUI;
+if (!UI) return;
 const D = UI.D;
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = UI.esc;
 
 const API = "https://api.deepseek.com/chat/completions";
-const K_KEY = "deepseek-key";
-const K_MODEL = "deepseek-model";
-const K_CHAT = "trip-chat";
+const K_CHAT = "trip-chat:" + D.id;
 const msgsEl = $("#msgs");
 const askEl = $("#ask");
 const sendBtn = $("#send");
-const dialog = $("#settings");
-const keyInput = $("#key");
-const modelSel = $("#model");
-const statusEl = $("#settings-status");
 const noteEl = $("#chatnote");
 
-let apiKey = localStorage.getItem(K_KEY) || "";
-let model = localStorage.getItem(K_MODEL) || "deepseek-chat";
+let apiKey = TripSettings.deepseekKey();
+let model = TripSettings.model();
 let chatLog = loadChat();
 let busy = false, controller = null, flashTimer = null, keyProblem = false;
 let slot = null, slotData = null, pendingSend = null;
@@ -239,7 +234,7 @@ function appendPlanCard(prose, plan) {
     <div class="plan-meta">
       <span class="mode" data-travel><img src="icons/${modeIcon}.png" alt="">${modeLabel}${plan.travelMin ? ` ${plan.travelMin} min` : ""}</span>
       <span data-dist></span>
-      ${place.rating ? `<span><span class="star">★</span> ${place.rating}</span>` : ""}
+      ${UI.live(place.id)?.rating ? `<span><span class="star">★</span> ${UI.live(place.id).rating}</span>` : ""}
       <span>${esc(place.name)}</span>
     </div>
     <p class="plan-warn" data-warn hidden></p>
@@ -276,7 +271,7 @@ function appendPlanCard(prose, plan) {
   // user will be at the start of the slot.
   const anchor = slot && slot.day === plan.day ? slotData?.anchor : null;
   if (anchor && window.TripRouting && anchor.id !== plan.placeId) {
-    const iso = `${day.date}T${plan.start}:00+09:00`;
+    const iso = TripRouting.zonedISO(day.date, plan.start, day.tz || D.meta.timeZone);
     TripRouting.travel(mode, { lat: anchor.lat, lng: anchor.lng }, { lat: place.lat, lng: place.lng }, iso).then(r => {
       if (!r || !card.isConnected) return;
       const travelEl = card.querySelector("[data-travel]");
@@ -339,7 +334,7 @@ function scrollChat(force = false) {
 }
 function renderSeed() {
   msgsEl.innerHTML = "";
-  D.chat.forEach(m => addMsg(m.role === "user" ? "user" : "ai", UI.md(m.md)));
+  (D.chat || []).forEach(m => addMsg(m.role === "user" ? "user" : "ai", UI.md(m.md)));
   chatLog.forEach(m => {
     const el = addMsg(m.role === "user" ? "user" : "ai", m.role === "user" ? `<p>${esc(m.content)}</p>` : "");
     if (m.role !== "user") renderAnswer(el, m.content, true);
@@ -465,70 +460,26 @@ travelMode must be walk, rail, bus or car. If you are unsure about opening hours
 
 /* ---------- Settings ---------- */
 function settingsOpen() {
-  keyInput.value = "";
-  keyInput.type = "password";
-  $("#reveal").textContent = "Show";
-  keyInput.placeholder = apiKey ? "•••••••••••• saved — paste a new key to replace" : "sk-…";
-  modelSel.value = model;
-  statusEl.textContent = "";
-  statusEl.className = "settings-status";
-  $("#clear-key").disabled = !apiKey;
-  if (typeof dialog.showModal === "function") dialog.showModal(); else dialog.setAttribute("open", "");
-  setTimeout(() => keyInput.focus(), 30);
+  TripSettings.open({
+    focus: "deepseek",
+    onSaved: () => {
+      if (!pendingSend || !apiKey) { pendingSend = null; return; }
+      const p = pendingSend;
+      pendingSend = null;
+      askEl.value = p;
+      autosize();
+      setTimeout(() => send(), 150);
+    },
+  });
 }
-function settingsClose() {
-  if (dialog.open) dialog.close(); else dialog.removeAttribute("open");
-  askEl.focus();
-}
-function saveSettings(e) {
-  if (e) e.preventDefault();
-  const typed = keyInput.value.trim();
-  if (typed) {
-    apiKey = typed;
-    keyProblem = false;
-    localStorage.setItem(K_KEY, apiKey);
-  } else if (!apiKey) {
-    statusEl.textContent = "Paste your DeepSeek API key first.";
-    statusEl.className = "settings-status bad";
-    keyInput.focus();
-    return;
-  }
-  model = modelSel.value;
-  localStorage.setItem(K_MODEL, model);
+addEventListener("trip-settings", () => {
+  const next = TripSettings.deepseekKey();
+  if (next !== apiKey) keyProblem = false;
+  apiKey = next;
+  model = TripSettings.model();
   updateComposer();
-  settingsClose();
-  flash(typed ? "Key saved in this browser. Ask anything." : "Settings saved.");
-  if (pendingSend) {
-    const p = pendingSend;
-    pendingSend = null;
-    askEl.value = p;
-    autosize();
-    setTimeout(() => send(), 150);
-  }
-}
-function clearKey() {
-  apiKey = "";
-  keyProblem = false;
-  localStorage.removeItem(K_KEY);
-  keyInput.value = "";
-  keyInput.placeholder = "sk-…";
-  statusEl.textContent = "Key removed. The trip page still works without it.";
-  statusEl.className = "settings-status";
-  $("#clear-key").disabled = true;
-  updateComposer();
-}
-$("#settings-form").addEventListener("submit", saveSettings);
-$("#settings-close").addEventListener("click", settingsClose);
-$("#clear-key").addEventListener("click", clearKey);
-$("#reveal").addEventListener("click", () => {
-  const show = keyInput.type === "password";
-  keyInput.type = show ? "text" : "password";
-  $("#reveal").textContent = show ? "Hide" : "Show";
-  keyInput.focus();
 });
 $("#chat-settings").addEventListener("click", settingsOpen);
-dialog.addEventListener("click", e => { if (e.target === dialog) settingsClose(); });
-dialog.addEventListener("close", () => { if (!apiKey) pendingSend = null; });
 
 /* ---------- Composer ---------- */
 function flash(text) {
@@ -562,9 +513,9 @@ askEl.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) {
 $("#composer").addEventListener("submit", e => { e.preventDefault(); if (busy) controller?.abort(); else send(); });
 
 const SUGGEST = [
-  "What if Fuji is hidden by cloud?",
-  "Where can we eat near Fushimi Inari?",
-  "Is Day 12 too much walking?",
+  "What if it rains?",
+  "Is any day too packed?",
+  `Where should we eat on Day ${Math.min(2, UI.DAYS.length)}?`,
   "What should we pack?",
 ];
 const SUGGEST_SLOT = ["Eat somewhere local", "Walk in a park", "Coffee and a sit-down", "Something indoors"];
@@ -584,13 +535,15 @@ renderSuggestions();
 /* ---------- Prompt ---------- */
 function systemPrompt() {
   const cat = Object.values(UI.P).map(p =>
-    `${p.id} | ${p.name} | ${p.kind}${p.suggested ? " (suggested restaurant)" : ""} | ${p.region}${p.rating ? " | ★" + p.rating : ""}`).join("\n");
+    `${p.id} | ${p.name} | ${p.kind}${p.suggested ? " (suggested restaurant)" : ""} | ${p.city || ""}`).join("\n");
   const days = D.days.map(d => `Day ${d.d} (${UI.fmtDay(d.date)}) — ${d.title}${d.stay ? " — stay: " + d.stay : ""}\n` +
     d.items.map(i => `  ${i.sid || "?"} | ${i.allDay ? "all day" : i.s + "–" + i.e} | ${i.t}${i.p ? " [" + i.p + "]" : ""}${i.added ? " [added]" : ""}`).join("\n")).join("\n");
-  return `You are the trip assistant inside a private trip-planning page for Dan and his wife: Japan 10–27 November 2026, then Shanghai. They are pescatarian. They love ancient history, castles, the Edo period, nature, Ghibli, car culture and two shopping days.
+  const m = D.meta;
+  return `You are the trip assistant inside a private trip-planning page: "${m.title}", ${UI.fmtDay(m.start)} – ${UI.fmtDay(m.end)} ${m.end.slice(0, 4)} (${m.days} days), ${m.routeLine || ""}.
+What the traveller told us:
+${D.profile || "(no profile)"}
 Answer their questions about this trip: helpful, concise (usually under 180 words), plain markdown (short paragraphs, "- " bullets, **bold**, at most one small table). No emoji.
-Visas and bookings are already handled: do not bring up visas, deadlines or booking reminders unless they ask about them.
-The page shows one plan, V4. It is ${D.meta.budget} for two (${D.meta.budgetNote}). Be honest about the overage if they ask about money.
+${m.budget ? `The estimated cost is ${m.budget}${m.budgetNote ? ` (${m.budgetNote})` : ""}. Be honest about money if they ask.` : ""}
 
 Place mentions are interactive on the page:
 - When you mention a place from the catalogue below, write it ONLY as {{id}} (for example {{fushimi-inari}}); the page shows its name and photos. Never write its name next to the tag.
@@ -626,8 +579,8 @@ ${cat}
 CURRENT ITINERARY:
 ${days}
 
-THE TRIP PLAN, V4 (markdown):
-${D.plan}${slot ? slotSection() : ""}`;
+THE TRIP PLAN (markdown):
+${D.plan || ""}${slot ? slotSection() : ""}`;
 }
 
 /* ---------- Errors ---------- */
@@ -687,7 +640,7 @@ async function send() {
     const res = await fetch(API, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-      body: JSON.stringify({ model, messages: context, stream: true, ...(model === "deepseek-reasoner" ? { max_tokens: 2400 } : { temperature: 0.4, max_tokens: 1600 }) }),
+      body: JSON.stringify({ model, messages: context, stream: true, ...(model === "deepseek-v4-pro" ? { max_tokens: 6000 } : { thinking: { type: "disabled" }, temperature: 0.4, max_tokens: 1600 }) }),
       signal: controller.signal,
     });
     if (!res.ok) throw await readError(res);
@@ -775,8 +728,8 @@ renderSeed();
 updateComposer();
 if (apiKey) $("#ai-status").classList.add("ok");
 addEventListener("storage", e => {
-  if (e.key === K_KEY) {
-    apiKey = localStorage.getItem(K_KEY) || "";
+  if (e.key === TripSettings.K_DS) {
+    apiKey = TripSettings.deepseekKey();
     updateComposer();
   }
 });
