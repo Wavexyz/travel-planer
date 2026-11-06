@@ -12,7 +12,7 @@
 <meta property="og:description" content="Plan a trip from a few questions: a day-by-day itinerary, calendar and map, with a trip assistant.">
 <meta property="og:type" content="website">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="assets/app.css?v=20261106-10">
+<link rel="stylesheet" href="assets/app.css?v=20261106-17">
 </head>
 <body data-mode="trip">
 <a class="skip" href="#page">Skip to the trip</a>
@@ -463,13 +463,13 @@
           <p class="ob-sub-k">Flight into Japan</p>
           <div class="ob-row">
             <label class="field"><span class="field-k">Flight number</span><input name="inFlight" placeholder="NH 212" autocomplete="off"></label>
-            <label class="field"><span class="field-k">Departure date</span><input type="date" name="inDate"></label>
+            <label class="field"><span class="field-k">Departure date</span><select name="inDate" data-days="in"></select></label>
             <div class="field"><span class="field-k">Flying from</span><div class="ap" data-ap="inFrom" data-single="1"></div></div>
           </div>
           <p class="ob-sub-k">Flight home</p>
           <div class="ob-row">
             <label class="field"><span class="field-k">Flight number</span><input name="outFlight" placeholder="NH 211" autocomplete="off"></label>
-            <label class="field"><span class="field-k">Departure date</span><input type="date" name="outDate"></label>
+            <label class="field"><span class="field-k">Departure date</span><select name="outDate" data-days="out"></select></label>
             <div class="field"><span class="field-k">Flying to</span><div class="ap" data-ap="outTo" data-single="1"></div></div>
           </div>
           <p class="field-hint">We look up the times on Google Flights. A booking reference alone can't be looked up, so use the flight number from your confirmation.</p>
@@ -485,11 +485,11 @@
           <p class="field-hint">Roughly is fine — you can change it later.</p>
           <div class="ob-row">
             <label class="field"><span class="field-k">You land at</span><select name="selfInAp"><option value="HND">Tokyo Haneda (HND)</option><option value="NRT">Tokyo Narita (NRT)</option><option value="KIX">Osaka Kansai (KIX)</option><option value="ITM">Osaka Itami (ITM)</option><option value="NGO">Nagoya (NGO)</option><option value="FUK">Fukuoka (FUK)</option><option value="CTS">Sapporo (CTS)</option><option value="OKA">Okinawa (OKA)</option></select></label>
-            <label class="field"><span class="field-k">Landing time</span><input type="time" name="selfInTime" value="15:00"></label>
+            <label class="field"><span class="field-k">Landing time</span><select name="selfInTime" data-times="15:00"></select></label>
           </div>
           <div class="ob-row">
             <label class="field"><span class="field-k">You leave from</span><select name="selfOutAp"><option value="HND">Tokyo Haneda (HND)</option><option value="NRT">Tokyo Narita (NRT)</option><option value="KIX">Osaka Kansai (KIX)</option><option value="ITM">Osaka Itami (ITM)</option><option value="NGO">Nagoya (NGO)</option><option value="FUK">Fukuoka (FUK)</option><option value="CTS">Sapporo (CTS)</option><option value="OKA">Okinawa (OKA)</option></select></label>
-            <label class="field"><span class="field-k">Take-off time</span><input type="time" name="selfOutTime" value="12:00"></label>
+            <label class="field"><span class="field-k">Take-off time</span><select name="selfOutTime" data-times="12:00"></select></label>
           </div>
         </div>
       </fieldset>
@@ -537,6 +537,7 @@
       <ol class="ob-steps" id="ob-steps">
         <li data-s="outline">Route</li>
         <li data-s="days">Days</li>
+        <li data-s="check">Check</li>
         <li data-s="places">Map</li>
       </ol>
       <p class="gen-quip" id="gen-quip" aria-hidden="true"></p>
@@ -678,15 +679,15 @@
   </form>
 </dialog>
 
-<script src="assets/api.js?v=20261106-10"></script>
-<script src="assets/google.js?v=20261106-10"></script>
-<script src="assets/settings.js?v=20261106-10"></script>
-<script src="assets/trips.js?v=20261106-10"></script>
-<script src="assets/routing.js?v=20261106-10"></script>
-<script src="assets/app.js?v=20261106-10"></script>
-<script src="assets/assistant.js?v=20261106-10"></script>
-<script src="assets/generator.js?v=20261106-10"></script>
-<script src="assets/booking.js?v=20261106-10"></script>
-<script src="assets/onboarding.js?v=20261106-10"></script>
+<script src="assets/api.js?v=20261106-17"></script>
+<script src="assets/google.js?v=20261106-17"></script>
+<script src="assets/settings.js?v=20261106-17"></script>
+<script src="assets/trips.js?v=20261106-17"></script>
+<script src="assets/routing.js?v=20261106-17"></script>
+<script src="assets/app.js?v=20261106-17"></script>
+<script src="assets/assistant.js?v=20261106-17"></script>
+<script src="assets/generator.js?v=20261106-17"></script>
+<script src="assets/booking.js?v=20261106-17"></script>
+<script src="assets/onboarding.js?v=20261106-17"></script>
 </body>
 </html>

@@ -231,6 +231,7 @@ renderCal();
 function goStep(i) {
   step = Math.max(0, Math.min(steps.length - 1, i));
   steps.forEach((f, j) => { f.hidden = j !== step; });
+  if (step === STEP.flights) fillFlightDays();
   $("#ob-step-label").textContent = `Step ${step + 1} of ${steps.length}`;
   $("#ob-bar").style.width = `${((step + 1) / steps.length) * 100}%`;
   $("#ob-back").textContent = step === 0 ? "Cancel" : "Back";
@@ -293,8 +294,32 @@ function validate(i) {
 }
 
 /* ---------- Conditional questions ---------- */
+/* Flight days and times are picked from short lists in the app's own style, not the browser's pickers. */
+const dayLabel = iso => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const plusDays = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toLocaleDateString("en-CA"); };
+function fillTimes() {
+  $$("select[data-times]", form).forEach(sel => {
+    if (sel.options.length) return;
+    for (let m = 0; m < 24 * 60; m += 30) {
+      const t = `${String(m / 60 | 0).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      sel.add(new Option(t, t, false, t === sel.dataset.times));
+    }
+  });
+}
+function fillFlightDays() {
+  const start = form.elements.start.value, end = form.elements.end.value;
+  // A flight to Japan leaves up to 2 days before you land; the flight home leaves around your last day.
+  const lists = { in: start ? [-2, -1, 0].map(n => plusDays(start, n)) : [], out: end ? [-1, 0, 1].map(n => plusDays(end, n)) : [] };
+  $$("select[data-days]", form).forEach(sel => {
+    const days = lists[sel.dataset.days], keep = sel.value;
+    if (sel.dataset.for === days.join()) return;
+    sel.dataset.for = days.join();
+    sel.replaceChildren(new Option("Choose the day", ""), ...days.map(d => new Option(dayLabel(d), d, false, d === keep)));
+  });
+}
 function syncConditional() {
   const v = n => form.elements[n]?.value;
+  fillTimes(); fillFlightDays();
   $("#ob-fl-booked").hidden = v("flightsStatus") !== "booked";
   $("#ob-fl-help").hidden = v("flightsStatus") !== "help";
   $("#ob-fl-self").hidden = v("flightsStatus") !== "self";
@@ -436,15 +461,16 @@ function book(a) {
 }
 
 /* ---------- Generation ---------- */
-const ORDER = ["outline", "days", "places"];
+const ORDER = ["outline", "days", "check", "places"];
 // Light-hearted lines for the wait, true to what each step does.
 const QUIPS = {
   outline: ["Unfolding the map…", "Sketching the route between cities…", "Deciding how many nights go where…", "Shortlisting places to stay…", "Working out the travel days…"],
   days: ["Pairing each morning with a good lunch…", "Packing a rainy-day plan B…", "Spacing things out so nobody's sprinting…", "Pencilling in coffee breaks…", "Keeping the walking to your step count…", "Saving a few alternatives, just in case…"],
+  check: ["Reading it all back once more…", "Making sure nothing clashes…", "Double-checking every meal against your diet…"],
   places: ["Pinning every stop on the map…", "Checking each place is where we think it is…", "Lining up photos for later…"],
 };
 // Each step owns part of the route the plane flies; the outline step has no counts, so it creeps.
-const BANDS = { outline: [0, .3], days: [.3, .78], places: [.78, 1] };
+const BANDS = { outline: [0, .3], days: [.3, .72], check: [.72, .84], places: [.84, 1] };
 const gen = { step: "outline", frac: 0, since: 0, shown: 0, timer: 0, quipTimer: 0, quip: 0 };
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 function markStep(name) {

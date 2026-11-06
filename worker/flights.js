@@ -4,7 +4,9 @@
 
    { mode: "search", from: "LHR", arrive: ["HND","NRT"], leave: ["KIX"], outbound, inbound,
      adults, children, cabin: 1-4, currency }  → 3 options (best, cheapest, fastest)
-   { mode: "lookup", flight: "NH 212", date, from?: "LHR", to?: "LHR" } → the booked leg's times */
+   { mode: "lookup", flight: "NH 212", date, from?: "LHR", to?: "LHR" } → the booked leg's times
+   { mode: "dates", from: "LHR", to: ["HND"], dates: [up to 7], adults, children, cabin, currency }
+     → per date, the fastest and the cheapest one-way flight (to compare nearby days) */
 import { tregGet } from "./treg.js";
 import { HttpError, iata, isoDate, pool, str } from "./util.js";
 
@@ -15,7 +17,7 @@ const CANDIDATES = 5;
 const flightNo = s => String(s || "").toUpperCase().replace(/\s+/g, "");
 
 export async function flights(body, env, { ctx }) {
-  return body.mode === "lookup" ? lookup(body, env, ctx) : search(body, env, ctx);
+  return body.mode === "lookup" ? lookup(body, env, ctx) : body.mode === "dates" ? nearbyDates(body, env, ctx) : search(body, env, ctx);
 }
 
 function leg(f) {
@@ -115,6 +117,29 @@ async function search(b, env, ctx) {
     insights: { lowest: pi.lowest_price ?? null, level: pi.price_level || "", typical: pi.typical_price_range || null },
     searchedAt: new Date().toISOString(),
   });
+}
+
+/* One one-way search per day: enough to see which days have a short flight, before a full search. */
+async function nearbyDates(b, env, ctx) {
+  const from = codes(b.from), to = codes(b.to);
+  const dates = [...new Set((Array.isArray(b.dates) ? b.dates : []).map(isoDate).filter(Boolean))].slice(0, 7);
+  if (!from.length || !to.length || !dates.length) throw new HttpError(400, "Add the airports and the dates to compare.");
+  const currency = str(b.currency, 3).toUpperCase() || "USD";
+  const days = await pool(dates, 4, async date => {
+    try {
+      const r = await tregGet(env, ctx, ENDPOINT, {
+        engine: "google_flights", hl: "en", type: 2, currency, outbound_date: date,
+        departure_id: from.join(","), arrival_id: to.join(","),
+        adults: Math.min(9, Math.max(1, +b.adults || 1)), children: Math.min(8, Math.max(0, +b.children || 0)),
+        travel_class: [1, 2, 3, 4].includes(+b.cabin) ? +b.cabin : 1,
+      });
+      const all = [...(r.best_flights || []), ...(r.other_flights || [])].filter(o => o.price && o.total_duration);
+      if (!all.length) return { date, none: true };
+      const pick = o => ({ minutes: o.total_duration, stops: Math.max(0, (o.flights?.length || 1) - 1), price: o.price });
+      return { date, fastest: pick([...all].sort((x, y) => x.total_duration - y.total_duration)[0]), cheapest: pick([...all].sort((x, y) => x.price - y.price)[0]) };
+    } catch { return { date, error: true }; }
+  });
+  return Response.json({ currency, days });
 }
 
 async function lookup(b, env, ctx) {

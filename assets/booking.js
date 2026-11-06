@@ -30,7 +30,8 @@ function start(a, { onDone, onBack }) {
   ctrl?.abort();
   ctrl = new AbortController();
   S = { a: { ...a }, onDone, onBack, stage: "route", route: null, note: "", arrive: TOKYO, leave: TOKYO, routeComment: "",
-    flights: { status: a.flightsStatus, options: null, chosen: null, in: null, out: null, error: "", loading: false, manual: false, why: "", filters: {}, note: "" },
+    flights: { status: a.flightsStatus, options: null, chosen: null, in: null, out: null, error: "", loading: false, manual: false, why: "", filters: {}, note: "",
+      dates: { out: a.start, back: a.end }, near: {} },
     prefs: { priorities: ["Central, near the sights", "Close to a major station", "Very clean"], bed: BED[a.party] || "one_large_bed", max: +a.maxNightly || TIER_MAX[a.budgetTier] || "", comment: "" },
     hotels: {}, error: "", loading: false };
   // Booked hotels become fixed stays.
@@ -195,7 +196,7 @@ async function searchFlights() {
   const a = S.a;
   try {
     S.flights.options = await TripAPI.postJSON("/api/flights", {
-      mode: "search", from: a.homeAirport, arrive: S.arrive, leave: S.leave, outbound: a.start, inbound: a.end,
+      mode: "search", from: a.homeAirport, arrive: S.arrive, leave: S.leave, outbound: S.flights.dates.out, inbound: S.flights.dates.back,
       adults: +a.adults || 1, children: (a.kids || "").split(/[^\d]+/).filter(Boolean).length, cabin: +a.cabin || 1, currency: a.currency,
       filters: S.flights.filters,
     }, { signal: ctrl.signal });
@@ -205,6 +206,37 @@ async function searchFlights() {
     S.flights.error = e.message;
   }
   S.flights.loading = false; render();
+}
+
+/* Nearby days, 3 either side of the planned date: one quick one-way search per day shows which
+   days have a short flight, before a full search. dir "out" = to Japan, "back" = home. */
+const NEAR = 3;
+function nearDates(dir) {
+  const base = dir === "out" ? S.a.start : S.a.end, other = S.flights.dates[dir === "out" ? "back" : "out"];
+  return Array.from({ length: NEAR * 2 + 1 }, (_, i) => addDays(base, i - NEAR))
+    .filter(d => d >= new Date().toLocaleDateString("en-CA") && (dir === "out" ? d < other : d > other));
+}
+async function loadNear(dir) {
+  const a = S.a, f = S.flights;
+  f.near[dir] = { loading: true }; render();
+  try {
+    const r = await TripAPI.postJSON("/api/flights", {
+      mode: "dates", from: dir === "out" ? a.homeAirport : S.leave, to: dir === "out" ? S.arrive : a.homeAirport, dates: nearDates(dir),
+      adults: +a.adults || 1, children: (a.kids || "").split(/[^\d]+/).filter(Boolean).length, cabin: +a.cabin || 1, currency: a.currency,
+    }, { signal: ctrl.signal });
+    f.near[dir] = { currency: r.currency, days: r.days || [] };
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    f.near[dir] = { error: e.message };
+  }
+  render();
+}
+function setFlightDate(dir, iso) {
+  const f = S.flights;
+  if (!iso || f.dates[dir] === iso) return;
+  f.dates[dir] = iso;
+  f.note = `Searching with ${dir === "out" ? "the flight there" : "the flight home"} on ${fmtDay(iso)}. Your route gains or loses nights to match.`;
+  searchFlights();
 }
 
 /* The traveller's words about the flights ("the way back is too long") become search filters. */
@@ -219,16 +251,24 @@ async function adjustFlights(comment) {
 OPTIONS THEY SAW
 ${shown || "none"}
 CURRENT FILTERS ${JSON.stringify(S.flights.filters)}
+CURRENT DATES: there ${S.flights.dates.out}, home ${S.flights.dates.back}. They may move either by up to ${NEAR} days (there: ${addDays(S.a.start, -NEAR)}…${addDays(S.a.start, NEAR)}; home: ${addDays(S.a.end, -NEAR)}…${addDays(S.a.end, NEAR)}).
+${["out", "back"].map(k => S.flights.near[k]?.days ? `NEARBY DAYS ${k === "out" ? "THERE" : "HOME"} (one-way): ${S.flights.near[k].days.filter(d => d.fastest).map(d => `${d.date} fastest ${hm(d.fastest.minutes)} ${d.fastest.stops} stops ${d.fastest.price}, cheapest ${d.cheapest.price}`).join("; ")}` : "").filter(Boolean).join("\n")}
 THEIR WORDS: "${comment}"
 Reply with JSON only, keeping current filters unless their words change them:
 {"stops": 1 (nonstop) | 2 (at most 1 stop) | 3 (at most 2 stops) | null, "maxMinutes": longest acceptable flight time per direction in minutes or null,
  "outDepartHours": [earliest, latest] departure hour 0-23 for the flight there, or null, "backDepartHours": [earliest, latest] for the flight home, or null,
  "includeAirlines": [IATA codes] or [], "excludeAirlines": [IATA codes] or [], "maxPrice": total price or null,
+ "outDate": "YYYY-MM-DD" only if their words ask to fly there on another day (or a better day is clearly needed and allowed), else null, "backDate": the same for the flight home,
  "note": "one short sentence to the traveller on what you changed"}` }],
     }, { signal: ctrl.signal });
     const r = JSON.parse(res.choices?.[0]?.message?.content || "{}");
     S.flights.note = String(r.note || "");
     delete r.note;
+    // Dates move only within the allowed window, and the flight home stays after the flight there.
+    const inside = (v, base) => /^\d{4}-\d{2}-\d{2}$/.test(v || "") && Math.abs(nightsBetween(base, v)) <= NEAR ? v : null;
+    const out = inside(r.outDate, S.a.start) || S.flights.dates.out, back = inside(r.backDate, S.a.end) || S.flights.dates.back;
+    if (back > out) S.flights.dates = { out, back };
+    delete r.outDate; delete r.backDate;
     S.flights.filters = Object.fromEntries(Object.entries(r).filter(([, v]) => v != null && !(Array.isArray(v) && !v.length)));
   } catch (e) {
     if (e.name === "AbortError") return;
@@ -417,6 +457,7 @@ function flightsView() {
   return `<h1>Pick your flights</h1>
     <p class="ob-lede">${esc(S.a.homeAirportLabel || S.a.homeAirport.replace(/,/g, "/"))} → ${esc(S.arrive.join("/"))}${S.arrive.join() !== S.leave.join() ? `, home from ${esc(S.leave.join("/"))}` : ""} · live from Google Flights.${esc(ins)}</p>
     ${f.note ? `<p class="bk-flightline">${esc(f.note)}</p>` : ""}
+    ${datesView()}
     <div class="bk-fls">${o.options.map((x, i) => `
       <article class="bk-fl${f.chosen === x ? " on" : ""}">
         <div class="bk-fl-main">
@@ -439,6 +480,26 @@ function flightsView() {
       <button type="button" class="btn primary" data-act="flights-ok"${f.chosen ? "" : " disabled"}>Continue to hotels</button>
     </div>`;
 }
+/* The dates being searched, with nearby days to compare on demand. */
+function datesView() {
+  const f = S.flights;
+  const row = (dir, label) => {
+    const n = f.near[dir], cur = f.dates[dir];
+    let body = "";
+    if (n?.loading) body = `<p class="bk-loading"><span class="bk-spin" aria-hidden="true"></span>Checking nearby days…</p>`;
+    else if (n?.error) body = `<p class="ob-error">${esc(n.error)}</p>`;
+    else if (n?.days) {
+      const ok = n.days.filter(d => d.fastest), mins = ok.map(d => d.fastest.minutes);
+      // Only point out the fastest day when the days actually differ.
+      const quick = mins.length && Math.min(...mins) < Math.max(...mins) ? Math.min(...mins) : -1;
+      body = `<div class="bk-days" role="group" aria-label="${esc(label)}: nearby days">${n.days.map(d => `<button type="button" class="bk-day${d.date === cur ? " on" : ""}${d.fastest?.minutes === quick ? " best" : ""}" data-date-dir="${dir}" data-date="${d.date}"${d.fastest ? "" : " disabled"} aria-pressed="${d.date === cur}">
+          <b>${esc(new Date(d.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric" }))}</b>${d.fastest ? `<span>${hm(d.fastest.minutes)}</span><small>${d.fastest.stops ? d.fastest.stops + " stop" + (d.fastest.stops > 1 ? "s" : "") : "nonstop"}</small><small>${money(d.cheapest.price, n.currency)}</small>` : `<small>${d.error ? "Couldn't check" : "No flights"}</small>`}</button>`).join("")}</div>
+        <p class="field-hint">Fastest flight and lowest one-way fare each day. Tap a day to search round trips with it.</p>`;
+    }
+    return `<div class="bk-dates-row"><span class="field-k">${esc(label)}</span><b>${esc(fmtDay(cur))}</b>${n?.days || n?.loading ? "" : `<button type="button" class="btn" data-near="${dir}">Compare nearby days</button>`}</div>${body}`;
+  };
+  return `<div class="bk-dates">${row("out", "Flight there")}${row("back", "Flight home")}</div>`;
+}
 function manualFlightsView() {
   const f = S.flights, a = S.a, lookup = f.why === "lookup";
   const ap = (k, sel) => `<select data-man="${k}-ap">${JP_AIRPORTS.map(([c, n]) => `<option value="${c}"${c === sel ? " selected" : ""}>${n} (${c})</option>`).join("")}</select>`;
@@ -447,7 +508,8 @@ function manualFlightsView() {
     : `<div class="bk-manual"><p><b>${esc(label)}</b>${lookup ? ` — we couldn't find ${esc(k === "in" ? a.inFlight : a.outFlight)} on that date. Add it by hand.` : ""}</p>
         <div class="ob-row">
           <label class="field"><span class="field-k">${k === "in" ? "Lands at" : "Leaves from"}</span>${ap(k, k === "in" ? S.arrive[0] : S.leave[0])}</label>
-          <label class="field"><span class="field-k">${k === "in" ? "Landing" : "Take-off"} (Japan time)</span><input type="datetime-local" data-man="${k}-time" value="${k === "in" ? a.start + "T15:00" : a.end + "T12:00"}"></label>
+          <label class="field"><span class="field-k">${k === "in" ? "Landing day" : "Take-off day"}</span><select data-man="${k}-day">${[-1, 0, 1].map(n => addDays(k === "in" ? a.start : a.end, n)).map(d => `<option value="${d}"${d === (k === "in" ? a.start : a.end) ? " selected" : ""}>${esc(fmtDay(d))}</option>`).join("")}</select></label>
+          <label class="field"><span class="field-k">Time (Japan)</span><select data-man="${k}-time">${Array.from({ length: 48 }, (_, i) => `${String(i / 2 | 0).padStart(2, "0")}:${i % 2 ? "30" : "00"}`).map(t => `<option${t === (k === "in" ? "15:00" : "12:00") ? " selected" : ""}>${t}</option>`).join("")}</select></label>
         </div></div>`;
   return `<h1>Your flights</h1>
     <p class="ob-lede">${lookup ? "Here's what we found." : "Tell us roughly when you land and leave, so the first and last day fit."}</p>
@@ -467,7 +529,7 @@ function gallery(h, stop) {
       <button type="button" class="bk-gal-nav next" data-gal-step="1" aria-label="Next photo">›</button>
       <span class="bk-gal-n">1 / ${sets.hotel.length}</span>
     </div>
-    <div class="bk-gal-tabs" role="tablist"><button type="button" class="on" data-gal-set="hotel" role="tab" aria-selected="true">Hotel · ${sets.hotel.length}</button>${sets.room.length ? `<button type="button" data-gal-set="room" role="tab" aria-selected="false">Rooms · ${sets.room.length}</button>` : ""}</div>
+    <div class="bk-gal-tabs" role="tablist"><button type="button" class="on" data-gal-set="hotel" role="tab" aria-selected="true">Hotel · ${sets.hotel.length}</button>${sets.room.length ? `<button type="button" data-gal-set="room" role="tab" aria-selected="false">${esc(h.roomLabel || "Rooms")} · ${sets.room.length}</button>` : ""}</div>
     <div class="bk-gal-thumbs">${sets.hotel.map((im, i) => `<button type="button" data-gal-to="${i}"${i ? "" : ' class="on"'} aria-label="Photo ${i + 1}"><img src="${esc(im.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"></button>`).join("")}</div>
   </div>`;
 }
@@ -556,6 +618,10 @@ function gallerySet(g, name) {
   $(".bk-gal-thumbs", g).innerHTML = gallerySetOf(g, hotel).map((im, i) => `<button type="button" data-gal-to="${i}" aria-label="Photo ${i + 1}"><img src="${esc(im.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer"></button>`).join("");
   galleryShow(g, 0);
 }
+// A photo that won't load leaves an empty thumbnail: hide it.
+root.addEventListener("error", e => {
+  if (e.target.tagName === "IMG" && e.target.closest(".bk-gal-thumbs")) e.target.closest("button").hidden = true;
+}, true);
 root.addEventListener("input", e => {
   const i = e.target.dataset.area;
   if (i == null) return;
@@ -573,6 +639,8 @@ root.addEventListener("click", e => {
   if (g && b.dataset.galTo != null) { galleryShow(g, +b.dataset.galTo); return; }
   if (g && b.dataset.galSet) { gallerySet(g, b.dataset.galSet); return; }
   if (b.dataset.vote) { answerDeck(b.dataset.vote); return; }
+  if (b.dataset.near) { loadNear(b.dataset.near); return; }
+  if (b.dataset.dateDir) { setFlightDate(b.dataset.dateDir, b.dataset.date); return; }
   if (b.dataset.nights != null) {
     const c = S.route[+b.dataset.nights];
     c.nights = Math.max(1, c.nights + +b.dataset.d);
@@ -610,9 +678,8 @@ root.addEventListener("click", e => {
     case "manual-ok": {
       for (const k of ["in", "out"]) {
         if (S.flights[k] && S.flights.why === "lookup") continue;
-        const ap = root.querySelector(`[data-man="${k}-ap"]`)?.value, t = root.querySelector(`[data-man="${k}-time"]`)?.value;
-        if (!t) { alert("Add both times."); return; }
-        const end = { id: ap, name: ap, time: t.replace("T", " ") };
+        const ap = root.querySelector(`[data-man="${k}-ap"]`)?.value, day = root.querySelector(`[data-man="${k}-day"]`)?.value, t = root.querySelector(`[data-man="${k}-time"]`)?.value;
+        const end = { id: ap, name: ap, time: `${day} ${t}` };
         S.flights[k] = { number: k === "in" ? S.a.inFlight || "" : S.a.outFlight || "", airline: "", booked: S.flights.why === "lookup",
           ...(k === "in" ? { to: end, from: { id: S.a.inFrom } } : { from: end, to: { id: S.a.outTo } }) };
       }

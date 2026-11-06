@@ -220,6 +220,104 @@ Rules:
 - Dietary restrictions are hard rules: every meal must be safe for them (see Matrix E). Never schedule a meal whose main dish they cannot eat, and never rely on "ask for…" workarounds when the standard dish breaks the rule (for a pescatarian, no chicken- or pork-broth ramen). This covers snacks and street food too.`;
 }
 
+/* ---------- Checking the plan ---------- */
+const WEEKDAY = iso => new Date(iso + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long" });
+
+/* Words that suggest a food stop breaks the diet. A hit is only a suspicion ("skip the pork
+   skewers" is fine), so the reviewer decides. */
+const MEAT = "pork|beef|chicken|duck|lamb|wagyu|sukiyaki|shabu|yakitori|yakiniku|tonkatsu|katsu|karaage|gyudon|motsu|tonkotsu|chashu|ham|bacon|sausage|kushikatsu|horumon|basashi";
+const FISH = "fish|sushi|sashimi|tuna|eel|unagi|bonito|dashi|seafood|prawn|shrimp|crab|oyster|scallop|squid|octopus|takoyaki|tempura|uni|ikura";
+function dietRule(diet = []) {
+  const words = [];
+  if (diet.some(d => ["pescatarian", "vegetarian", "vegan"].includes(d))) words.push(MEAT);
+  if (diet.some(d => ["vegetarian", "vegan"].includes(d))) words.push(FISH);
+  if (diet.some(d => ["no_pork", "halal"].includes(d))) words.push("pork|tonkatsu|tonkotsu|chashu|ham|bacon|katsu");
+  if (diet.includes("shellfish_allergy")) words.push("prawn|shrimp|crab|lobster|oyster|scallop|clam");
+  return words.length ? new RegExp(`\\b(${words.join("|")})\\w*`, "i") : null;
+}
+
+/* Problems code can find for certain (or suspects); the reviewer must look at every one. */
+function knownProblems(days, places, diet) {
+  const out = [], firstUse = new Map(), rule = dietRule(diet);
+  for (const d of days) d.items.forEach((it, i) => {
+    const at = `D${d.d}#${i}`;
+    if (it.c === "food" && it.p && places[it.p]?.kind !== "hotel") {
+      const seen = firstUse.get(it.p);
+      if (seen && seen.d !== d.d) out.push(`${at}: ${places[it.p]?.name || it.p} is already used on day ${seen.d} — pick a different restaurant`);
+      else if (!seen) firstUse.set(it.p, { d: d.d });
+    }
+    if (/\bor (a|an|any|one|another|nearby)\b|\ba (local|nearby|good|cosy|cozy) (izakaya|restaurant|café|cafe|bar|ramen)/i.test(it.t)) out.push(`${at}: not a specific place ("${it.t}")`);
+    if (/\?\s|\? No|actually,/i.test(it.t)) out.push(`${at}: the title thinks aloud ("${it.t}")`);
+    const said = `${it.t} ${it.n || ""} ${places[it.p]?.name || ""}`;
+    if (rule && (it.c === "food" || /lunch|dinner|snack|stall|market|graze/i.test(it.t)) && rule.test(said)) out.push(`${at}: may not suit their diet (mentions "${rule.exec(said)[0]}") — keep it only if what they eat there is safe as served`);
+    if (/check[ -]?in/i.test(it.t) && !/flight|airport|terminal/i.test(it.t) && it.p && it.p !== d.stay && places[it.p]?.kind === "hotel") out.push(`${at}: checks in at ${places[it.p]?.name}, but tonight's stay is ${places[d.stay]?.name || "elsewhere"}`);
+  });
+  return out;
+}
+
+const planLine = (it, i, d, places) => `D${d.d}#${i} ${it.allDay ? "all day" : `${it.s}-${it.e}`} [${it.c}] ${it.t}${it.p ? ` @ ${places[it.p]?.name || it.p}` : ""}${it.n ? ` — ${it.n.slice(0, 140)}` : ""}`;
+
+function reviewPrompt(a, days, places, problems) {
+  return `TRAVELLER
+${profileText(a)}
+${fixedText(a)}
+THE PLAN (D<day>#<item index> time [kind] what @ place — note)
+${days.map(d => `Day ${d.d}, ${WEEKDAY(d.date)} ${d.date}, in ${places[d.city]?.name || d.city}, sleeping at ${places[d.stay]?.name || "— (no night)"}
+${d.items.map((it, i) => planLine(it, i, d, places)).join("\n")}`).join("\n\n")}
+
+${problems.length ? `KNOWN PROBLEMS (fix every one)\n${problems.map(p => "- " + p).join("\n")}\n\n` : ""}Review the whole plan as a careful editor and fix only real problems:
+- the diet: every meal, snack and street-food stop must be safe as served; "ask for…" workarounds don't count when the standard dish breaks the rule
+- a restaurant used on more than one day; a meal that isn't one specific, real place
+- something in the wrong city for that day, or too far to reach in the time given
+- overlapping times, impossible transfers, or a visit outside opening hours or on its weekly closing day (check the weekday)
+- checking in anywhere but that night's stay; activities before landing or after leaving for the airport
+- anything they said no to, and text that thinks aloud or contradicts itself
+Keep everything else exactly as it is. Replace a broken item with a better one in the same time slot, or delete it.
+A replacement must pass every check itself: a restaurant used nowhere else in the plan, and a place whose main food they can eat (never a yakiniku, kushikatsu, tonkatsu or tonkotsu-ramen place with a "fish option" for someone who avoids meat).
+Reply with JSON only:
+{"fixes": [{"d": 3, "i": 5, "problem": "short reason",
+   "item": {"s": "HH:MM", "e": "HH:MM", "t": "What they do, specific, e.g. Dinner at Sushi Saito", "place": "place-key or null", "n": "one practical sentence", "k": "Sight|Sit-down|Browse|Experience|Walk|Booked|Travel", "c": "sight|nature|food|hotel|shop|transport|city", "mode": "walk|rail|bus|car|flight", "src": [{"name": "Tabelog", "detail": "3.62"}]}
+   — or "item": null to delete it}],
+ "places": [{"key": "kebab-case", "name": "Exact real name", "city": "city-key", "kind": "sight|nature|food|shop|transport|hotel", "query": "name, neighbourhood, city, country"}]}
+"places" lists only new places your fixes use. Existing place keys: ${Object.keys(places).join(", ")}.
+Use "fixes": [] if nothing is wrong.`;
+}
+
+/* Up to two rounds: the second only when code still finds problems after the first. */
+async function review(a, days, places, opts) {
+  let fixed = await reviewOnce(a, days, places, opts, true);
+  if (knownProblems(days, places, a.diet).length) fixed += await reviewOnce(a, days, places, opts, false);
+  return fixed;
+}
+
+async function reviewOnce(a, days, places, { signal, scope }, first) {
+  const problems = knownProblems(days, places, a.diet);
+  if (!first && !problems.length) return 0;
+  // The core rules (diet matrix, closures, transfers) without the catalog: the plan is already chosen.
+  const r = await callJSON("You are the final checker for a Japan itinerary. Reply with JSON only.", reviewPrompt(a, days, places, problems),
+    { signal, maxTokens: 5000, scope: { ...scope, catalog: false } });
+  for (const p of r?.places || []) {
+    const key = slug(p.key || p.name);
+    if (!key || places[key]) continue;
+    places[key] = { id: key, name: String(p.name || key).slice(0, 80), kind: KINDS.includes(p.kind) ? p.kind : "sight", city: slug(p.city), query: String(p.query || p.name).slice(0, 200) };
+  }
+  const known = new Set(Object.keys(places)), drop = new Set();
+  let fixed = 0;
+  for (const f of (Array.isArray(r?.fixes) ? r.fixes : []).slice(0, 30)) {
+    const day = days.find(d => d.d === +f.d), i = +f.i;
+    if (!day || !(i >= 0 && i < day.items.length)) continue;
+    if (!f.item) { drop.add(day.items[i]); fixed++; continue; }
+    const [item] = cleanDay({ items: [f.item] }, {}, known, places).items;
+    // A malformed reply (e.g. "t": "food") would be worse than the original.
+    if (item && item.t.length > 12 && !KINDS.includes(item.t.toLowerCase())) { day.items[i] = item; fixed++; }
+  }
+  for (const d of days) {
+    d.items = d.items.filter(it => !drop.has(it));
+    d.items.sort((x, y) => (x.allDay ? -1 : toMin(x.s)) - (y.allDay ? -1 : toMin(y.s)));
+  }
+  return fixed;
+}
+
 /* ---------- Building the trip ---------- */
 function cleanDay(raw, base, known, places) {
   const items = [];
@@ -406,7 +504,12 @@ async function generate(a, { onProgress = () => {}, signal } = {}) {
   });
   if (days.every(d => !d.items.length)) throw new Error("The planner returned empty days. Try again.");
 
-  // 3. Places on Google
+  // 3. One more read of the whole plan, for what parallel day-writing can't see.
+  onProgress({ step: "check", text: "Checking the whole plan for problems…" });
+  try { await review(a, days, places, { signal, scope }); }
+  catch (e) { if (e?.name === "AbortError") throw e; /* an unchecked plan is still a plan */ }
+
+  // 4. Places on Google
   const used = new Set(days.flatMap(d => [d.stay, d.city, ...d.alts, ...d.items.map(i => i.p)]).filter(Boolean));
   const todo = Object.values(places).filter(p => p.kind === "city" || used.has(p.id));
   const report = (done, total) => onProgress({ step: "places", text: `Finding places on Google Maps (${done} of ${total})…`, done, total });

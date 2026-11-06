@@ -947,3 +947,20 @@ body[data-mode="onboard"] .app { display: none; }
   .tag { border: .5pt solid #ccc; }
   a { text-decoration: none; color: #111; }
 }
+
+/* Flight dates: the days searched, with nearby days to compare */
+.bk-dates { display: grid; gap: 8px; padding: 12px 14px; border-radius: 10px; background: var(--callout); }
+.bk-dates-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 15px; }
+.bk-dates-row .field-k { min-width: 92px; }
+.bk-dates-row .btn { margin-left: auto; }
+.bk-dates .field-hint { margin: 0; }
+.bk-days { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(68px, 1fr); gap: 6px; overflow-x: auto; padding: 2px; }
+.bk-day { display: grid; gap: 1px; text-align: left; padding: 7px 9px; border: 0; border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; box-shadow: inset 0 0 0 1px var(--line); cursor: pointer; }
+.bk-day b { font-size: 13px; }
+.bk-day span { font-size: 13px; }
+.bk-day small { font-size: 12px; color: var(--muted); }
+.bk-day:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--blue); }
+.bk-day.best span { color: var(--t-green-i); font-weight: 600; }
+.bk-day.on { background: var(--sel); box-shadow: inset 0 0 0 2px var(--blue); }
+.bk-day:disabled { opacity: .5; cursor: default; }
+.bk-day:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }

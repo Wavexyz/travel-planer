@@ -34,6 +34,24 @@ const km = (a, b) => {
   return 12742 * Math.asin(Math.sqrt(h));
 };
 
+/* Booking sites name the same room differently ("UTSUROI - Station Side Queen Room - Non-Smoking"
+   vs "-UTSUROI- (Renovated) 1 Queen Non Smoking"), so match on the words that describe it. */
+const ROOM_FILLER = new Set(["room", "rooms", "non", "smoking", "nonsmoking", "no", "the", "with", "and", "a", "of", "1", "type", "only", "renovated", "view", "standard"]);
+const roomWords = n => new Set(String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").split(" ").filter(w => w && !ROOM_FILLER.has(w)));
+function roomPhotos(name, all) {
+  const want = roomWords(name);
+  // A name made only of filler ("Standard Room") can still match itself exactly.
+  if (!want.size) return [...new Set(all.filter(r => r.name === name).flatMap(r => r.images))].slice(0, 12).map(u => ({ thumb: u, full: u }));
+  // Same room or a less specific name for it: "UTSUROI Queen" fits "UTSUROI Station Side Queen", but
+  // "UTSUROI Queen" photos never stand in for a plain "Queen Room".
+  const sim = r => { const w = roomWords(r.name); if (![...w].every(x => want.has(x))) return 0; return w.size / want.size; };
+  const urls = all.map(r => ({ r, s: r.name === name ? 2 : sim(r) })).filter(x => x.s >= 0.5 && x.r.images.length)
+    .sort((x, y) => y.s - x.s).flatMap(x => x.r.images);
+  return [...new Set(urls)].slice(0, 12).map(u => ({ thumb: u, full: u }));
+}
+
+const SHARED = /dorm|bunk|capsule|\bbed in\b|female only|male only/i;
+
 function offersOf(d, allowed) {
   const bySource = new Map();
   for (const o of [...(d.featured_prices || []), ...(d.prices || [])]) {
@@ -124,7 +142,11 @@ export async function hotels(b, env, { ctx, url }) {
     catch { return null; }
     const offers = offersOf(d, allowed);
     if (!offers.length) return null; // no live price on a trusted site: treat as unavailable
+    // Shared beds (dorms, bunks, capsules) only ever suit someone travelling alone.
+    const listed = offers.reduce((n, o) => n + o.rooms.length, 0);
+    if (adults + kids.length > 1) offers.forEach(o => { o.rooms = o.rooms.filter(r => !SHARED.test(r.name)); });
     const rooms = offers.flatMap(o => o.rooms).filter((r, j, all) => r.name && all.findIndex(x => x.name === r.name) === j).slice(0, 6);
+    if (listed && !rooms.length) return null; // only shared beds on offer
     return {
       id: "h" + (i + 1), token: p.property_token,
       name: str(p.name, 90), type: str(p.type, 30), stars: num(p.extracted_hotel_class),
@@ -136,7 +158,7 @@ export async function hotels(b, env, { ctx, url }) {
       nearby: (p.nearby_places || []).slice(0, 3).map(n => ({ name: str(n.name, 60), how: (n.transportations || []).map(t => `${t.type} ${t.duration}`).slice(0, 2).join(", ") })),
       images: (d.images || p.images || []).slice(0, 12).map(im => ({ thumb: str(im.thumbnail, 400), full: str(im.original_image || im.thumbnail, 400) })).filter(im => im.thumb),
       address: str(d.address, 160), lat: num(p.gps_coordinates?.latitude), lng: num(p.gps_coordinates?.longitude),
-      cheapest: offers[0], offers: offers.slice(0, 5).map(({ rooms, ...o }) => o), rooms,
+      cheapest: offers[0], offers: offers.slice(0, 5).map(({ rooms, ...o }) => o), rooms, roomOffers: offers.flatMap(o => o.rooms),
     };
   })).filter(Boolean);
   if (!enriched.length) throw new HttpError(404, `None of the top hotels in ${area || city} had live prices for these dates.`);
@@ -187,20 +209,30 @@ Include every candidate, best first.`, { maxTokens: 2500 });
   for (const h of enriched) if (!out.includes(h)) out.push(Object.assign(h, { why: h.why || h.description, room: h.rooms[0]?.name || "" }));
   const picks = out.slice(0, 3);
 
-  // Photos from the hotel and booking sites only — never guests' uploads.
+  // Photos from the hotel and booking sites only — never guests' uploads. Hotels also post their
+  // social media here (portrait and square shots of guests, staff, promotions): keep wide
+  // photography only, and the sections that show the place before the "At a glance" mix.
+  const SECTIONS = [/exterior/i, /interior/i, /food/i, /amenit/i, /glance/i];
   await pool(picks, 3, async h => {
+    // The Rooms tab shows the room we recommend, from the booking sites' photos of that room type.
+    // One or two photos are often a generic shot (a lobby, the restaurant), so it takes three.
+    h.roomImages = roomPhotos(h.room, h.roomOffers);
+    if (h.roomImages.length < 3) h.roomImages = [];
+    h.roomLabel = h.roomImages.length ? "Your room" : "Rooms";
     try {
       const r = await tregGet(env, ctx, ENDPOINT, { ...common, q: `${kind} in ${where}`, engine: "google_hotels_photos", property_token: h.token });
-      const official = (title, re) => (r.sections || []).filter(s => re.test(s.title || "")).flatMap(s => s.photos || [])
-        .filter(ph => ph.source && ph.source !== "Visitor Submitted" && ph.photo_url)
+      const official = res => res.flatMap(re => (r.sections || []).filter(s => re.test(s.title || "")).flatMap(s => s.photos || []))
+        .filter(ph => ph.source && ph.source !== "Visitor Submitted" && ph.photo_url && (!ph.width || !ph.height || ph.width >= ph.height * 1.3))
+        // Professional listing photos first, then the hotel's own.
+        .sort((x, y) => (y.source === "External Website") - (x.source === "External Website"))
         .map(ph => ({ thumb: str(ph.thumbnail_url || ph.photo_url, 500), full: str(ph.photo_url, 500) }));
-      const hotel = official("hotel", /glance|exterior|interior|amenit|food/i), rooms = official("room", /bedroom|bathroom|room/i);
       const seen = new Set();
       const uniq = list => list.filter(x => !seen.has(x.full) && seen.add(x.full)).slice(0, 12);
-      h.roomImages = uniq(rooms);
-      if (hotel.length >= 3) h.images = uniq(hotel);
+      const hotel = uniq(official(SECTIONS));
+      if (hotel.length >= 3) h.images = hotel;
+      // No photos of the exact room: fall back to the hotel's own bedroom photos.
+      if (!h.roomImages.length) h.roomImages = uniq(official([/bedroom/i, /bathroom/i]));
     } catch { /* keep the property photos */ }
-    h.roomImages ||= [];
   });
-  return Response.json({ city, area, checkIn, checkOut, currency, hotels: picks.map(({ token, guestReviews, aspects, rooms, ...h }) => h), searchedAt: new Date().toISOString() });
+  return Response.json({ city, area, checkIn, checkOut, currency, hotels: picks.map(({ token, guestReviews, aspects, rooms, roomOffers, ...h }) => h), searchedAt: new Date().toISOString() });
 }

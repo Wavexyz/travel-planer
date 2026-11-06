@@ -52,14 +52,23 @@ core rules on every call and adds only the catalog experiences that match the tr
 3. **Flights** — booked: looked up by flight number on Google Flights. Booking them later: the
    traveller says when they land and leave (never assumed). Not booked: 3 options
    (best overall, cheapest, fastest) with real return legs and totals, linked to Google Flights.
+   "Compare nearby days" shows the fastest flight and lowest one-way fare for each day up to 3 days
+   either side (one quick search per day, ~$0.10 per direction); tapping a day searches again with
+   it, and the route gains or loses nights to match. The "Not quite right?" comment can move the
+   dates too ("a shorter flight home, I can leave a day later").
 4. **Hotels** — priorities (central, near a station, clean, quiet…), beds, a max per room per night
    and a free-text comment, then 3 hotels per stop. Each search keeps hotels within ~2.5 km of the
    stop's neighbourhood (never airport hotels), fetches details for the strongest 6 (every booking
    site's live price, room types with their own photos), drops hotels with no availability, and
    reads the 10 latest Google reviews of the best 4. DeepSeek ranks them with the skill's hotel rules
    and the reviews; each card shows why, a verified guest quote, caveats and the cheapest site.
-5. **Itinerary** — outline and days (DeepSeek, built around the fixed flights and hotels), then every
-   place matched on Google Places. Each item lists **why it is there**: a curated catalog entry
+5. **Itinerary** — outline and days (DeepSeek, built around the fixed flights and hotels). The outline
+   picks every lunch and dinner, so days written in parallel never repeat a restaurant. Then a
+   **checker** reads the whole plan once: code flags what it can find for certain (a restaurant on
+   two days, vague "or a nearby…" places, check-ins away from that night's hotel, food stops that
+   mention something the diet rules out) and DeepSeek fixes those and anything else that doesn't hold
+   together (timing, closing days, wrong city, "ask for…" diet workarounds). A second short round
+   runs only if code still finds problems. Then every place is matched on Google Places. Each item lists **why it is there**: a curated catalog entry
    (solid badge) and/or a source the planner cites, such as Tabelog or Japan-Guide (outlined badge,
    not checked live).
 6. **Assistant** — opens with what the plan is and why it looks the way it does, and proposes
@@ -70,7 +79,12 @@ own website (default: Booking.com, Expedia, Hotels.com, Agoda, Trip.com, Rakuten
 JAPANiCAN, Relux). Price-comparison sites that redirect elsewhere are left out. Set the
 `BOOKING_SITES` secret (comma-separated, names as Google lists them) to change the list.
 
-**Photos.** Only photos from the hotel or booking sites are shown, never guests' uploads.
+**Photos.** Only photos from the hotel or booking sites are shown, never guests' uploads. Hotels
+also post their social media to Google (portrait or square shots of guests, staff and offers), so
+the hotel gallery keeps wide photos only, booking-site photography first. The room tab shows the
+room we recommend ("Your room"), from the booking sites' photos of that room type, when there are
+at least 3; otherwise it falls back to the hotel's own bedroom photos ("Rooms"). Groups of two or
+more are never offered dorm, bunk or capsule beds.
 
 **Map.** A minimal base style is applied in code (no Cloud Map ID needed), with page-drawn markers,
 cased route lines per mode, direction arrows and mode badges.
@@ -109,7 +123,7 @@ Google Maps Platform bills per request, with a free monthly allowance per API. I
 - Map: one map load per page view; one Routes request per leg the first time a day is shown in a
   session.
 
-DeepSeek: one outline call plus one call per three days for each generated trip, and one call
+DeepSeek: one outline call, one call per three days and one or two checker calls for each generated trip, and one call
 per assistant question (roughly 20k input tokens for a long trip; repeated prefixes are cached).
 
 ## Using the app
