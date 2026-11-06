@@ -3,19 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Japan in Autumn · 10–27 November 2026</title>
-<meta name="description" content="An 18-day autumn itinerary for Japan and Shanghai: Tokyo, Kawaguchiko, Kyoto, Nara and Himeji, with photos, a day-by-day plan, calendar and map.">
+<title>Trip planner</title>
+<meta name="description" content="Plan a trip from a few questions: a day-by-day itinerary, calendar and map, with a trip assistant.">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#191919" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="Japan in Autumn · 10–27 November 2026">
-<meta property="og:description" content="An 18-day autumn itinerary: Tokyo, Kawaguchiko, Kyoto, Nara, Himeji and Shanghai, with photos, a day-by-day plan, calendar and map.">
+<meta property="og:title" content="Trip planner">
+<meta property="og:description" content="Plan a trip from a few questions: a day-by-day itinerary, calendar and map, with a trip assistant.">
 <meta property="og:type" content="website">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="vendor/maplibre-gl.css">
-<link rel="stylesheet" href="assets/app.css?v=20261031-5">
+<link rel="stylesheet" href="assets/app.css?v=20261102-1">
 </head>
-<body>
+<body data-mode="trip">
 <a class="skip" href="#page">Skip to the trip</a>
 <noscript><p style="padding:16px;font:16px system-ui">This trip planner needs JavaScript for the itinerary, calendar, map and assistant.</p></noscript>
 
@@ -55,8 +54,16 @@
       <button class="chat-toggle" id="chat-open" aria-label="Open assistant" title="Open assistant">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.5L7.5 8 3 12.5M7.5 3.5L12 8l-4.5 4.5"/></svg>
       </button>
-      <div class="crumb"><span>Trips</span><span class="sep">/</span><span>🍁 Japan in Autumn</span></div>
-      <span class="edited">Edited 27 Oct 2026</span>
+      <div class="crumb">
+        <button type="button" class="crumb-btn" id="trips-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="trips-menu">Trips
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+        </button>
+        <span class="sep">/</span><span id="trip-crumb"></span>
+      </div>
+      <span class="edited"></span>
+      <button class="btn-s" id="top-settings" aria-label="Settings" title="Keys and settings">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41L9.25 5.35c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>
+      </button>
       <button class="btn-s print" id="print" aria-label="Print the itinerary" title="Print or save as PDF">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 6V2.5h7V6M4.5 12H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-1.5"/><rect x="4.5" y="9.5" width="7" height="4" rx=".5"/></svg>
         <span>Print</span>
@@ -64,21 +71,29 @@
     </div>
 
     <div class="doc">
+      <div class="key-alert" id="google-error" role="alert" hidden>
+        <p>Google turned down some requests, so photos, ratings, routes or the map may be missing.</p>
+        <ul></ul>
+        <div class="key-alert-actions">
+          <button type="button" class="btn-s" id="google-error-settings">Keys &amp; settings</button>
+          <button type="button" class="btn-s" id="google-error-close">Dismiss</button>
+        </div>
+      </div>
       <header class="head">
-        <div class="eyebrow">Trip plan <span class="vtag">V4</span></div>
-        <h1>Japan in Autumn</h1>
+        <div class="eyebrow">Trip plan <span class="vtag" id="trip-version"></span></div>
+        <h1 id="trip-title"></h1>
         <div class="trip-meta">
           <div class="tm">
             <span class="tm-k">Dates</span>
-            <span class="tm-v">Tue 10 – Fri 27 Nov 2026 <span class="tm-sub">18 days, 17 nights</span></span>
+            <span class="tm-v" id="trip-dates"></span>
           </div>
           <div class="tm">
             <span class="tm-k">Route</span>
-            <span class="tm-v">Tokyo · Kawaguchiko · Kyoto · Nara · Himeji · Shanghai</span>
+            <span class="tm-v" id="trip-route"></span>
           </div>
-          <div class="tm">
+          <div class="tm" id="trip-budget-row">
             <span class="tm-k">Budget</span>
-            <span class="tm-v">≈ US$7,600 for two <span class="tm-sub warn">about US$600 over the US$7,000 ceiling</span></span>
+            <span class="tm-v" id="trip-budget"></span>
           </div>
         </div>
       </header>
@@ -156,6 +171,204 @@
   </nav>
 </div>
 
+<section class="onboard" id="onboard" hidden aria-labelledby="ob-title">
+  <div class="ob-top">
+    <span class="ob-brand"><span class="badge" aria-hidden="true">✦</span>Trip planner</span>
+    <span class="grow"></span>
+    <button type="button" class="btn-s" id="ob-settings">Keys &amp; settings</button>
+    <button type="button" class="btn-s" id="ob-cancel" hidden>Back to my trip</button>
+  </div>
+  <div class="ob-body">
+    <div class="ob-panel" id="ob-welcome">
+      <h1 id="ob-title">Plan a new trip</h1>
+      <p class="ob-lede">Answer a few questions and the assistant builds a day-by-day itinerary. Every stop shows up in the itinerary, the calendar and the map.</p>
+      <div class="ob-actions">
+        <button type="button" class="btn primary" id="ob-start">Start planning</button>
+        <button type="button" class="btn" id="ob-sample">Open the sample trip</button>
+      </div>
+      <p class="ob-keys" id="ob-keys" hidden></p>
+      <div class="ob-trips" id="ob-trips" hidden></div>
+    </div>
+
+    <form class="ob-panel" id="ob-form" hidden novalidate>
+      <div class="ob-progress"><span id="ob-step-label"></span><div class="ob-bar" aria-hidden="true"><i id="ob-bar"></i></div></div>
+
+      <fieldset class="ob-step" data-step="1">
+        <legend>Where do you want to go?</legend>
+        <label class="field"><span class="field-k">Destination</span>
+          <textarea name="destination" rows="2" required placeholder="Japan: Tokyo and Kyoto, maybe a night in a hot-spring town"></textarea></label>
+        <label class="field"><span class="field-k">Travelling from <i>optional</i></span>
+          <input name="from" placeholder="Your home city or airport"></label>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="2" hidden>
+        <legend>When?</legend>
+        <div class="field">
+          <span class="field-k" id="ob-cal-k">Dates</span>
+          <div class="ob-chips" id="ob-flex" role="radiogroup" aria-label="How fixed are your dates">
+            <label class="ob-chip"><input type="radio" name="flex" value="0" checked><span>Exact dates</span></label>
+            <label class="ob-chip"><input type="radio" name="flex" value="1"><span>± 1 day</span></label>
+            <label class="ob-chip"><input type="radio" name="flex" value="2"><span>± 2 days</span></label>
+            <label class="ob-chip"><input type="radio" name="flex" value="3"><span>± 3 days</span></label>
+            <label class="ob-chip"><input type="radio" name="flex" value="any"><span>I'm flexible</span></label>
+          </div>
+          <div class="rcal" id="ob-cal" role="group" aria-labelledby="ob-cal-k"></div>
+          <div class="flexi" id="ob-flexi" hidden>
+            <div class="flexi-len"><span class="field-k" id="ob-len-k">How long?</span>
+              <div class="stepper" role="group" aria-labelledby="ob-len-k">
+                <button type="button" data-len="-1" aria-label="One day fewer">−</button>
+                <input type="number" name="duration" min="1" max="30" value="7" aria-label="Days">
+                <button type="button" data-len="1" aria-label="One day more">+</button>
+                <span>days</span>
+              </div>
+            </div>
+            <div><span class="field-k" id="ob-months-k">When? <i>pick one or more months</i></span>
+              <div class="ob-months" id="ob-months" role="group" aria-labelledby="ob-months-k"></div></div>
+          </div>
+          <p class="rcal-sum" id="ob-cal-sum" aria-live="polite"></p>
+          <input type="hidden" name="start"><input type="hidden" name="end">
+        </div>
+        <label class="field"><span class="field-k">Arrival <i>optional</i></span>
+          <input name="arrival" placeholder="Land at Haneda at 19:45 on the first day"></label>
+        <label class="field"><span class="field-k">Departure <i>optional</i></span>
+          <input name="departure" placeholder="Fly home from Osaka at 14:00 on the last day"></label>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="3" hidden>
+        <legend>Who's going?</legend>
+        <div class="ob-chips" role="radiogroup" aria-label="Travelling as">
+          <label class="ob-chip"><input type="radio" name="party" value="Solo"><span>Solo</span></label>
+          <label class="ob-chip"><input type="radio" name="party" value="Couple" checked><span>Couple</span></label>
+          <label class="ob-chip"><input type="radio" name="party" value="Family with children"><span>Family</span></label>
+          <label class="ob-chip"><input type="radio" name="party" value="Friends"><span>Friends</span></label>
+          <label class="ob-chip"><input type="radio" name="party" value="Group"><span>Group</span></label>
+        </div>
+        <div class="ob-row">
+          <label class="field"><span class="field-k">How many people</span><input type="number" name="people" min="1" max="20" value="2"></label>
+          <label class="field"><span class="field-k">Children's ages <i>optional</i></span><input name="kids" placeholder="6 and 9"></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="4" hidden>
+        <legend>What do you love?</legend>
+        <div class="ob-chips" aria-label="Interests">
+          <label class="ob-chip"><input type="checkbox" name="interests" value="History and culture"><span>History &amp; culture</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Food and drink"><span>Food &amp; drink</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Nature and hiking"><span>Nature &amp; hiking</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Art and museums"><span>Art &amp; museums</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Architecture"><span>Architecture</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Shopping"><span>Shopping</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Nightlife"><span>Nightlife</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Beaches"><span>Beaches</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Wellness and spas"><span>Wellness &amp; spas</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Photography"><span>Photography</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Off the beaten path"><span>Off the beaten path</span></label>
+          <label class="ob-chip"><input type="checkbox" name="interests" value="Kids' activities"><span>Kids' activities</span></label>
+        </div>
+        <label class="field"><span class="field-k">Anything more specific? <i>optional</i></span>
+          <input name="interestsOther" placeholder="Castles, Studio Ghibli, car culture, jazz bars…"></label>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="5" hidden>
+        <legend>Pace and style</legend>
+        <div class="ob-group">
+          <span class="field-k" id="ob-pace-k">Pace</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-pace-k">
+            <label class="ob-card"><input type="radio" name="pace" value="Relaxed (2–3 things a day, late starts)"><span class="ob-card-i" aria-hidden="true">🐢</span><b>Relaxed</b><small>2–3 things a day, late starts</small></label>
+            <label class="ob-card"><input type="radio" name="pace" value="Balanced (3–5 things a day)" checked><span class="ob-card-i" aria-hidden="true">🚶</span><b>Balanced</b><small>3–5 things a day</small></label>
+            <label class="ob-card"><input type="radio" name="pace" value="Packed (see as much as possible)"><span class="ob-card-i" aria-hidden="true">⚡</span><b>Packed</b><small>See as much as possible</small></label>
+          </div>
+        </div>
+        <div class="ob-group">
+          <span class="field-k" id="ob-walking-k">Walking</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-walking-k">
+            <label class="ob-card"><input type="radio" name="walking" value="Light, under 10,000 steps a day"><span class="ob-card-i" aria-hidden="true">👟</span><b>Light</b><small>Under 10k steps a day</small></label>
+            <label class="ob-card"><input type="radio" name="walking" value="Moderate, up to 20,000 steps a day" checked><span class="ob-card-i" aria-hidden="true">🥾</span><b>Moderate</b><small>Up to 20k steps a day</small></label>
+            <label class="ob-card"><input type="radio" name="walking" value="Lots of walking is fine"><span class="ob-card-i" aria-hidden="true">🏃</span><b>Lots</b><small>Happy to walk all day</small></label>
+          </div>
+        </div>
+        <div class="ob-group">
+          <span class="field-k" id="ob-transport-k">Getting around</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-transport-k">
+            <label class="ob-card"><input type="radio" name="transport" value="Public transport and walking" checked><span class="ob-card-i" aria-hidden="true">🚆</span><b>Public transport</b><small>Trains, metro and buses</small></label>
+            <label class="ob-card"><input type="radio" name="transport" value="Rental car"><span class="ob-card-i" aria-hidden="true">🚗</span><b>Rental car</b><small>Drive yourselves</small></label>
+            <label class="ob-card"><input type="radio" name="transport" value="Taxis and private transfers"><span class="ob-card-i" aria-hidden="true">🚕</span><b>Taxis &amp; transfers</b><small>Door to door</small></label>
+            <label class="ob-card"><input type="radio" name="transport" value="A mix of whatever is best"><span class="ob-card-i" aria-hidden="true">🔀</span><b>A mix</b><small>Whatever fits each day</small></label>
+          </div>
+        </div>
+        <div class="ob-group">
+          <span class="field-k" id="ob-stay-k">Where you like to stay</span>
+          <div class="ob-cards" role="radiogroup" aria-labelledby="ob-stay-k">
+            <label class="ob-card"><input type="radio" name="stay" value="Budget hotels or hostels"><span class="ob-card-i" aria-hidden="true">🎒</span><b>Budget</b><small>Hostels and simple hotels</small></label>
+            <label class="ob-card"><input type="radio" name="stay" value="Comfortable mid-range hotels" checked><span class="ob-card-i" aria-hidden="true">🛏️</span><b>Mid-range</b><small>Comfortable hotels</small></label>
+            <label class="ob-card"><input type="radio" name="stay" value="Boutique and characterful places"><span class="ob-card-i" aria-hidden="true">🪴</span><b>Boutique</b><small>Small places with character</small></label>
+            <label class="ob-card"><input type="radio" name="stay" value="Luxury hotels"><span class="ob-card-i" aria-hidden="true">✨</span><b>Luxury</b><small>The best in town</small></label>
+            <label class="ob-card"><input type="radio" name="stay" value="Local style (guesthouses, ryokan, riads…)"><span class="ob-card-i" aria-hidden="true">🏮</span><b>Local style</b><small>Guesthouses, ryokan, riads</small></label>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="ob-step" data-step="6" hidden>
+        <legend>Budget, food and the rest</legend>
+        <div class="ob-row ob-budget">
+          <label class="field"><span class="field-k">Budget <i>optional</i></span><input type="number" name="budget" min="0" step="100" placeholder="5000"></label>
+          <label class="field"><span class="field-k">Currency</span><input name="currency" value="USD" maxlength="3"></label>
+          <label class="field"><span class="field-k">For</span>
+            <select name="budgetScope"><option value="in total">the whole trip</option><option value="per person">each person</option></select></label>
+        </div>
+        <label class="field"><span class="field-k">Dietary needs <i>optional</i></span><input name="diet" placeholder="Pescatarian, no pork, nut allergy…"></label>
+        <label class="field"><span class="field-k">Must do <i>optional</i></span><textarea name="must" rows="2" placeholder="See Mt Fuji, one night in a ryokan, a sushi counter…"></textarea></label>
+        <label class="field"><span class="field-k">Avoid <i>optional</i></span><input name="avoid" placeholder="Crowds, long day trips, early mornings…"></label>
+        <label class="field"><span class="field-k">Anything else? <i>optional</i></span><textarea name="notes" rows="2" placeholder="Two shopping days at the end, we travel with a wheelchair…"></textarea></label>
+      </fieldset>
+
+      <p class="ob-error" id="ob-error" role="alert" hidden></p>
+      <div class="ob-nav">
+        <button type="button" class="btn" id="ob-back">Back</button>
+        <span class="grow"></span>
+        <button type="button" class="btn primary" id="ob-next">Next</button>
+        <button type="submit" class="btn primary" id="ob-generate" hidden>Generate itinerary</button>
+      </div>
+    </form>
+
+    <div class="ob-panel" id="ob-working" hidden>
+      <div class="gen-head">
+        <span class="gen-emoji" id="gen-emoji" aria-hidden="true">🧳</span>
+        <div>
+          <h1 id="gen-title">Building your trip</h1>
+          <p class="gen-sub" id="gen-sub"></p>
+        </div>
+      </div>
+      <svg class="gen-flight" id="gen-flight" viewBox="0 0 600 130" aria-hidden="true">
+        <path id="gen-path" d="M24 104 C 120 24, 220 10, 300 62 S 470 118, 576 30" fill="none" />
+        <path id="gen-done" d="M24 104 C 120 24, 220 10, 300 62 S 470 118, 576 30" fill="none" pathLength="100" />
+        <circle class="gen-from" cx="24" cy="104" r="6" />
+        <g class="gen-to" transform="translate(576 30)"><path d="M0 0c-6-8-9-12-9-16a9 9 0 0 1 18 0c0 4-3 8-9 16z" transform="translate(0 2)" /><circle cy="-14" r="3.2" /></g>
+        <g id="gen-plane"><g class="gen-bob"><path d="M13 0c0-1.6-1.3-2.4-3-2.4H4.5L-3-12h-3.4l3.6 9.6H-9.5l-2.8-3.6h-2.6l1.8 6-1.8 6h2.6l2.8-3.6H-2.8L-6.4 12H-3l7.5-9.6H10c1.7 0 3-.8 3-2.4z" /></g></g>
+      </svg>
+      <ol class="ob-steps" id="ob-steps">
+        <li data-s="outline">Route</li>
+        <li data-s="days">Days</li>
+        <li data-s="places">Map</li>
+      </ol>
+      <p class="gen-quip" id="gen-quip" aria-hidden="true"></p>
+      <p class="ob-status" id="ob-status" role="status"></p>
+      <div class="gen-preview" id="gen-preview" hidden>
+        <div class="gen-stops" id="gen-stops"></div>
+        <div class="gen-days" id="gen-days"></div>
+      </div>
+      <p class="ob-error" id="ob-gen-error" role="alert" hidden></p>
+      <div class="ob-nav">
+        <button type="button" class="btn" id="ob-stop">Cancel</button>
+        <button type="button" class="btn" id="ob-edit" hidden>Change answers</button>
+        <button type="button" class="btn primary" id="ob-retry" hidden>Try again</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="menu" id="trips-menu" role="menu" aria-label="Trips" hidden></div>
+
 <div class="pop" id="pop" hidden></div>
 <div class="scrim" id="scrim" hidden></div>
 
@@ -231,42 +444,59 @@
   <form id="settings-form" novalidate>
     <div class="settings-head">
       <div>
-        <h2 id="settings-title">Connect DeepSeek</h2>
-        <p>The assistant answers with your own DeepSeek API key. Nothing else on the page needs it.</p>
+        <h2 id="settings-title">Keys &amp; settings</h2>
+        <p>Both keys are stored in this browser only and sent only to their own service.</p>
       </div>
       <button type="button" class="chat-toggle" id="settings-close" aria-label="Close settings">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
       </button>
     </div>
+    <h3 class="settings-sec">DeepSeek — itinerary generation and the trip assistant</h3>
     <label class="field">
       <span class="field-k">API key</span>
       <span class="field-input">
         <input id="key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" aria-describedby="key-hint">
-        <button type="button" class="reveal" id="reveal" aria-label="Show API key">Show</button>
+        <button type="button" class="reveal" data-reveal="key" aria-label="Show DeepSeek key">Show</button>
+        <button type="button" class="reveal" id="clear-key">Remove</button>
       </span>
-      <span class="field-hint" id="key-hint">Create a key at <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a>. It is stored in this browser only. Your questions and the trip plan are sent to DeepSeek when you ask.</span>
+      <span class="field-hint" id="key-hint">Create a key at <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">platform.deepseek.com</a>. Your answers and the trip plan are sent to DeepSeek when you generate a trip or ask a question.</span>
     </label>
     <label class="field">
-      <span class="field-k">Model</span>
+      <span class="field-k">Assistant model</span>
       <select id="model">
-        <option value="deepseek-chat">deepseek-chat — fast and cheap</option>
-        <option value="deepseek-reasoner">deepseek-reasoner — slower, more careful</option>
+        <option value="deepseek-flash">deepseek-flash — fast and cheap</option>
+        <option value="deepseek-v4-pro">deepseek-v4-pro — slower, more careful</option>
       </select>
+    </label>
+    <h3 class="settings-sec">Google Maps Platform — map, places, photos and routes</h3>
+    <label class="field">
+      <span class="field-k">API key</span>
+      <span class="field-input">
+        <input id="gkey" type="password" placeholder="AIza…" autocomplete="off" spellcheck="false" aria-describedby="gkey-hint">
+        <button type="button" class="reveal" data-reveal="gkey" aria-label="Show Google key">Show</button>
+        <button type="button" class="reveal" id="clear-gkey">Remove</button>
+      </span>
+      <span class="field-hint" id="gkey-hint">In <a href="https://console.cloud.google.com/google/maps-apis/credentials" target="_blank" rel="noopener">Google Cloud</a>, enable the Maps JavaScript API, Places API (New) and Routes API, and restrict the key to this site's address.</span>
+    </label>
+    <label class="field">
+      <span class="field-k">Map ID <i>optional</i></span>
+      <span class="field-input"><input id="mapid" placeholder="DEMO_MAP_ID" autocomplete="off" spellcheck="false" aria-describedby="mapid-hint"></span>
+      <span class="field-hint" id="mapid-hint">Leave empty to use Google's demo map style.</span>
     </label>
     <p class="settings-status" id="settings-status" role="status"></p>
     <div class="settings-actions">
-      <button type="submit" class="btn primary" id="save-key">Save key</button>
-      <button type="button" class="btn" id="clear-key">Remove key</button>
+      <button type="submit" class="btn primary" id="save-key">Save</button>
     </div>
   </form>
 </dialog>
 
-<script src="vendor/maplibre-gl.js"></script>
-<script src="vendor/pmtiles.js"></script>
-<script src="vendor/basemaps.js"></script>
-<script src="assets/data.js?v=20261031-5"></script>
-<script src="assets/routing.js?v=20261031-5"></script>
-<script src="assets/app.js?v=20261031-5"></script>
-<script src="assets/assistant.js?v=20261031-5"></script>
+<script src="assets/google.js?v=20261102-1"></script>
+<script src="assets/settings.js?v=20261102-1"></script>
+<script src="assets/trips.js?v=20261102-1"></script>
+<script src="assets/routing.js?v=20261102-1"></script>
+<script src="assets/app.js?v=20261102-1"></script>
+<script src="assets/assistant.js?v=20261102-1"></script>
+<script src="assets/generator.js?v=20261102-1"></script>
+<script src="assets/onboarding.js?v=20261102-1"></script>
 </body>
 </html>
